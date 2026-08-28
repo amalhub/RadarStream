@@ -16,7 +16,13 @@ from serial.tools import list_ports
 
 from app_config import DEFAULT_CONFIG
 from colormap_utils import get_matplotlib_colormap, pg_get_cmap
-from data_pipeline import CaptureBuffer, DataProcessor, UdpListener
+from data_pipeline import (
+    CaptureBuffer,
+    DataProcessor,
+    FeatureFrame,
+    MicroDopplerFrame,
+    UdpListener,
+)
 from hardware_interfaces import (
     Dca1000Controller,
     RadarCliClient,
@@ -24,7 +30,7 @@ from hardware_interfaces import (
 )
 from radar_profile import parse_radar_profile_shape
 from radar_tlv import Iwr6843TlvParser
-from runtime_state import RuntimeState
+from runtime_state import FeatureMode, RuntimeState
 from signal_processor import RadarSignalProcessor
 from generated_ui import GestureOverlayWindow, Ui_MainWindow
 
@@ -141,6 +147,7 @@ class RadarStreamApplication:
 
         self._configure_feature_views()
         self._connect_signals()
+        self._on_tab_changed(self.ui.tabWidget.currentIndex())
         self.update_com_ports()
 
         self.refresh_timer = QtCore.QTimer(self.main_window)
@@ -203,6 +210,18 @@ class RadarStreamApplication:
             self.feature_views[feature_name] = view
             self.images[feature_name] = image
 
+        micro_doppler_view = pg.ViewBox(enableMenu=False)
+        micro_doppler_view.setDefaultPadding(0.0)
+        micro_doppler_view.setAspectLocked(False)
+        micro_doppler_view.setMouseEnabled(x=False, y=False)
+        self.ui.microDopplerView.setCentralItem(micro_doppler_view)
+        micro_doppler_image = pg.ImageItem(border=None)
+        micro_doppler_image.setLookupTable(lookup_table)
+        micro_doppler_view.addItem(micro_doppler_image)
+        micro_doppler_view.enableAutoRange(x=True, y=True)
+        self.feature_views["micro_doppler"] = micro_doppler_view
+        self.images["micro_doppler"] = micro_doppler_image
+
         neutral_icon = str(self.config.paths.gesture_icon(7))
         self.ui.graphicsView_5.setAlignment(QtCore.Qt.AlignCenter)
         self.ui.graphicsView_5.setPixmap(QtGui.QPixmap(neutral_icon))
@@ -218,6 +237,29 @@ class RadarStreamApplication:
         self.ui.pushButton_11.clicked.connect(self.send_radar_config)
         self.ui.actionload.triggered.connect(self.show_sub_window)
         self.ui.pushButton_12.clicked.connect(self.qt_app.exit)
+        self.ui.tabWidget.currentChanged.connect(self._on_tab_changed)
+
+    def _on_tab_changed(self, index):
+        selected_tab = self.ui.tabWidget.widget(index)
+        if selected_tab is self.ui.tab_2:
+            mode = FeatureMode.MICRO_DOPPLER
+        elif self.config.micro_doppler_only:
+            mode = FeatureMode.IDLE
+        else:
+            mode = FeatureMode.FULL
+        if (
+            mode is FeatureMode.MICRO_DOPPLER
+            and self.runtime_state.feature_mode is not mode
+        ):
+            self.signal_processor.reset_micro_doppler_history()
+            self.images["micro_doppler"].clear()
+        self.runtime_state.set_feature_mode(mode)
+        self.latest_features = None
+        try:
+            while True:
+                self.feature_queue.get_nowait()
+        except Empty:
+            pass
 
     def update_figure(self):
         try:
@@ -230,6 +272,20 @@ class RadarStreamApplication:
             return
 
         features = self.latest_features
+        if self.runtime_state.feature_mode is FeatureMode.MICRO_DOPPLER:
+            if not isinstance(features, MicroDopplerFrame):
+                return
+            display_levels = self._robust_micro_doppler_levels(
+                features.micro_doppler
+            )
+            self.images["micro_doppler"].setImage(
+                features.micro_doppler,
+                levels=display_levels,
+            )
+            return
+
+        if not isinstance(features, FeatureFrame):
+            return
         dsp_config = self.config.dsp
         history_slice = slice(
             dsp_config.angle_history_start, dsp_config.angle_history_stop
@@ -251,6 +307,21 @@ class RadarStreamApplication:
 
         if self.runtime_state.consume_gesture():
             self._handle_gesture(features, rti_feature)
+
+    @staticmethod
+    def _robust_micro_doppler_levels(feature):
+        """Return visible color levels without letting outliers dominate."""
+
+        finite_values = np.asarray(feature)[np.isfinite(feature)]
+        if finite_values.size == 0:
+            return (0.0, 1.0)
+        lower, upper = np.percentile(finite_values, (2.0, 99.5))
+        if upper <= lower:
+            lower = float(finite_values.min())
+            upper = float(finite_values.max())
+        if upper <= lower:
+            upper = lower + 1.0
+        return (float(lower), float(upper))
 
     def _handle_gesture(self, features, rti_feature):
         feature_views = (
@@ -387,7 +458,13 @@ class RadarStreamApplication:
             return
         try:
             profile_shape = parse_radar_profile_shape(config_path)
-            self._apply_radar_profile(profile_shape)
+            micro_doppler_only = (
+                "micro_doppler" in os.path.basename(config_path).lower()
+            )
+            self._apply_radar_profile(
+                profile_shape,
+                micro_doppler_only=micro_doppler_only,
+            )
             self.open_radar(config_path, self.cli_port_name)
         except Exception as error:
             self.print_log("发送失败: {}".format(error), "red")
@@ -399,11 +476,21 @@ class RadarStreamApplication:
             "green",
         )
 
-    def _apply_radar_profile(self, profile_shape):
+    def _apply_radar_profile(self, profile_shape, micro_doppler_only=False):
+        # Dedicated profiles can use the stock 3-TX/4-RX OOB point-cloud
+        # configuration while the host micro-Doppler path consumes only the
+        # TX0-RX0 virtual channel.
         runtime_config = self.base_config.with_radar_shape(
-            *profile_shape.as_tuple()
+            *profile_shape.as_tuple(),
+            micro_doppler_only=micro_doppler_only,
         )
-        if runtime_config.radar == self.config.radar:
+        if runtime_config == self.config:
+            if (
+                micro_doppler_only
+                and self.ui is not None
+                and hasattr(self.ui, "tabWidget")
+            ):
+                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
             return
 
         feature_queue = Queue(maxsize=runtime_config.feature_queue_size)
@@ -421,6 +508,10 @@ class RadarStreamApplication:
         self.feature_queue = feature_queue
         self.signal_processor = signal_processor
         self.latest_features = None
+        if self.ui is not None and hasattr(self.ui, "tabWidget"):
+            if micro_doppler_only:
+                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
+            self._on_tab_changed(self.ui.tabWidget.currentIndex())
 
     def open_radar(self, config_path, com_port):
         self._ensure_capture_backend()

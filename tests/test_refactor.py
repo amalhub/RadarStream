@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from ctypes import c_int
 from multiprocessing import RawArray
+from pathlib import Path
 from queue import Queue
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from app_config import AppConfig, RadarFrameConfig
 from signal_processor import RadarSignalProcessor
-from data_pipeline import DataProcessor, UdpListener
+from data_pipeline import DataProcessor, MicroDopplerFrame, UdpListener
 from hardware_interfaces import (
     Dca1000Controller,
     HardwareConnectionError,
@@ -29,7 +30,8 @@ from radar_dsp.angle_estimation import gen_steering_vec, peak_search
 from radar_dsp.utils import DOPPLER_IDX_TO_SIGNED, Window
 from radar_dsp.zoom_fft import ZoomFFT
 from radar_profile import RadarProfileShape, parse_radar_profile_shape
-from runtime_state import RuntimeState
+from radar_tlv import Iwr6843TlvParser
+from runtime_state import FeatureMode, RuntimeState
 
 
 UI_DEPENDENCIES_AVAILABLE = all(
@@ -112,6 +114,13 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertTrue(state.consume_gesture())
         self.assertFalse(state.consume_gesture())
 
+    def test_feature_mode_defaults_to_full_and_can_switch(self):
+        state = RuntimeState()
+
+        self.assertIs(FeatureMode.FULL, state.feature_mode)
+        state.set_feature_mode(FeatureMode.MICRO_DOPPLER)
+        self.assertIs(FeatureMode.MICRO_DOPPLER, state.feature_mode)
+
 
 class ConfigurationTests(unittest.TestCase):
     def test_default_frame_size_is_derived_from_dimensions(self):
@@ -150,6 +159,41 @@ class ConfigurationTests(unittest.TestCase):
 
         self.assertEqual((32, 64, 3, 4), shape.as_tuple())
         self.assertEqual(49152, runtime_config.radar.raw_values_per_frame)
+
+    def test_micro_doppler_cfg_matches_requested_radar_timing(self):
+        config_path = "radar_configs/iwr6843_micro_doppler.cfg"
+        shape = parse_radar_profile_shape(config_path)
+        lines = [
+            line.split()
+            for line in Path(config_path).read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("%")
+        ]
+        commands = {parts[0]: parts for parts in lines}
+        profile = commands["profileCfg"]
+        frame = commands["frameCfg"]
+        channel = commands["channelCfg"]
+
+        chirp_period_us = float(profile[3]) + float(profile[5])
+        sample_time_us = int(profile[10]) / (float(profile[11]) / 1000)
+        bandwidth_mhz = float(profile[8]) * sample_time_us
+        chirps_per_frame = (int(frame[2]) - int(frame[1]) + 1) * int(frame[3])
+
+        self.assertEqual((128, 32, 3, 4), shape.as_tuple())
+        self.assertEqual((15, 7), (int(channel[1]), int(channel[2])))
+        self.assertAlmostEqual(1000.0, bandwidth_mhz, places=6)
+        self.assertAlmostEqual(3344.0, 1e6 / chirp_period_us, places=2)
+        self.assertEqual(96, chirps_per_frame)
+        self.assertAlmostEqual(25.0, 1000 / float(frame[5]), places=6)
+        self.assertAlmostEqual(40.0, float(frame[5]), places=6)
+        self.assertLess(chirps_per_frame * chirp_period_us / 1000, 40.0)
+
+        runtime_config = AppConfig().with_radar_shape(
+            *shape.as_tuple(), micro_doppler_only=True
+        )
+        self.assertTrue(runtime_config.micro_doppler_only)
+        parameters = Iwr6843TlvParser().parse_config(config_path)
+        self.assertEqual(128, parameters["numRangeBins"])
+        self.assertEqual(32, parameters["numDopplerBins"])
 
     def test_profile_with_insufficient_virtual_antennas_is_rejected(self):
         shape = parse_radar_profile_shape("radar_configs/iwr1843.cfg")
@@ -336,6 +380,61 @@ class DataProcessorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             processor._decode_frame(np.zeros(4, dtype=np.int16))
 
+    def test_decode_frame_supports_single_tx_single_rx_profile(self):
+        radar = RadarFrameConfig(
+            adc_samples=128,
+            chirps_per_tx=128,
+            tx_antennas=1,
+            rx_antennas=1,
+        )
+        processor = DataProcessor(
+            "test",
+            StubCaptureBuffer(),
+            signal_processor=object(),
+            output_queue=Queue(),
+            radar_config=radar,
+        )
+
+        decoded = processor._decode_frame(
+            np.zeros(radar.raw_values_per_frame, dtype=np.int16)
+        )
+
+        self.assertEqual((128, 128, 1), decoded.shape)
+
+    def test_micro_doppler_mode_skips_full_feature_pipeline(self):
+        state = RuntimeState()
+        state.set_feature_mode(FeatureMode.MICRO_DOPPLER)
+
+        class SignalProcessorSpy:
+            runtime_state = state
+
+            def __init__(self):
+                self.micro_calls = 0
+
+            def process_micro_doppler(self, adc_frame, window_type_1d=None):
+                self.micro_calls += 1
+                return np.ones((8, 64))
+
+            def process_time_features(self, *args, **kwargs):
+                raise AssertionError("full time-feature DSP must not run")
+
+            def process_angle_features(self, *args, **kwargs):
+                raise AssertionError("angle DSP must not run")
+
+        signal_processor = SignalProcessorSpy()
+        processor = DataProcessor(
+            "test",
+            StubCaptureBuffer(),
+            signal_processor=signal_processor,
+            output_queue=Queue(),
+        )
+
+        result = processor._process_frame(object(), sequence=3)
+
+        self.assertIsInstance(result, MicroDopplerFrame)
+        self.assertEqual(3, result.sequence)
+        self.assertEqual(1, signal_processor.micro_calls)
+
     def test_default_decoded_frame_runs_windowed_range_processing(self):
         radar = RadarFrameConfig()
         processor = DataProcessor(
@@ -473,6 +572,52 @@ class SignalProcessorTests(unittest.TestCase):
         self.assertTrue(np.isfinite(rai).all())
         self.assertTrue(np.isfinite(rei).all())
 
+    def test_micro_doppler_uses_only_configured_receive_channel(self):
+        random = np.random.RandomState(9)
+        other_rx_only = np.zeros((64, 64, 12), dtype=np.complex128)
+        other_rx_only[:, :, 1] = random.randn(64, 64) + 1j * random.randn(64, 64)
+        processor = RadarSignalProcessor(AppConfig(), RuntimeState())
+
+        processor.process_micro_doppler(
+            other_rx_only, clutter_removal_enabled=False
+        )
+        ignored_result = processor.process_micro_doppler(
+            other_rx_only, clutter_removal_enabled=False
+        )
+
+        np.testing.assert_array_equal(0, ignored_result)
+
+        selected_rx = np.zeros((64, 64, 12), dtype=np.complex128)
+        selected_rx[:, :, 0] = random.randn(64, 64) + 1j * random.randn(64, 64)
+        selected_processor = RadarSignalProcessor(AppConfig(), RuntimeState())
+        selected_processor.process_micro_doppler(
+            selected_rx, clutter_removal_enabled=False
+        )
+        selected_result = selected_processor.process_micro_doppler(
+            selected_rx, clutter_removal_enabled=False
+        )
+
+        self.assertEqual((1, 128), selected_result.shape)
+        self.assertGreater(np.count_nonzero(selected_result), 0)
+
+    def test_micro_doppler_flattens_frames_before_128_by_16_windows(self):
+        config = AppConfig().with_radar_shape(
+            128, 128, 1, 1, micro_doppler_only=True
+        )
+        processor = RadarSignalProcessor(config, RuntimeState())
+        random = np.random.RandomState(11)
+        frame = random.randn(128, 128, 1) + 1j * random.randn(128, 128, 1)
+
+        first = processor.process_micro_doppler(frame)
+        second = processor.process_micro_doppler(frame)
+        third = processor.process_micro_doppler(frame)
+
+        self.assertEqual((1, 128), first.shape)
+        self.assertEqual((9, 128), second.shape)
+        self.assertEqual((17, 128), third.shape)
+        self.assertEqual(112, processor._micro_doppler_chirp_buffer.shape[0])
+        self.assertTrue(np.isfinite(third).all())
+
     def test_noncanonical_adc_layout_is_rejected(self):
         processor = RadarSignalProcessor(AppConfig(), RuntimeState())
 
@@ -595,6 +740,77 @@ class ApplicationLifecycleTests(unittest.TestCase):
                 np.testing.assert_allclose(
                     view_range[1], [image_rect.top(), image_rect.bottom()]
                 )
+        finally:
+            application.refresh_timer.stop()
+            application.gesture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_micro_doppler_tab_switches_processing_path_and_updates_strip(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        try:
+            application.ui.tabWidget.setCurrentWidget(application.ui.tab_2)
+            application.qt_app.processEvents()
+
+            self.assertIs(
+                FeatureMode.MICRO_DOPPLER,
+                application.runtime_state.feature_mode,
+            )
+            self.assertIs(
+                application.feature_views["micro_doppler"],
+                application.ui.microDopplerView.centralWidget,
+            )
+
+            feature = np.ones((128, 64))
+            application.feature_queue.put_nowait(MicroDopplerFrame(1, feature))
+            application.update_figure()
+            np.testing.assert_array_equal(
+                feature, application.images["micro_doppler"].image
+            )
+            self.assertEqual(
+                (1.0, 2.0),
+                application._robust_micro_doppler_levels(feature),
+            )
+
+            application.ui.tabWidget.setCurrentWidget(application.ui.tab)
+            application.qt_app.processEvents()
+            self.assertIs(FeatureMode.FULL, application.runtime_state.feature_mode)
+        finally:
+            application.refresh_timer.stop()
+            application.gesture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_single_channel_profile_opens_micro_tab_and_idles_on_full_tab(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        try:
+            shape = parse_radar_profile_shape(
+                "radar_configs/iwr6843_micro_doppler.cfg"
+            )
+            application._apply_radar_profile(
+                shape,
+                micro_doppler_only=True,
+            )
+
+            self.assertTrue(application.config.micro_doppler_only)
+            self.assertIs(
+                application.ui.tab_2,
+                application.ui.tabWidget.currentWidget(),
+            )
+            self.assertIs(
+                FeatureMode.MICRO_DOPPLER,
+                application.runtime_state.feature_mode,
+            )
+
+            application.ui.tabWidget.setCurrentWidget(application.ui.tab)
+            application.qt_app.processEvents()
+            self.assertIs(FeatureMode.IDLE, application.runtime_state.feature_mode)
         finally:
             application.refresh_timer.stop()
             application.gesture_interval_timer.stop()

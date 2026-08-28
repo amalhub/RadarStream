@@ -12,6 +12,7 @@ import numpy as np
 
 from app_config import DEFAULT_CONFIG, RadarFrameConfig
 from radar_dsp.utils import Window
+from runtime_state import FeatureMode
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,14 @@ class FeatureFrame:
     rdi: np.ndarray
     rai: np.ndarray
     rei: np.ndarray
+
+
+@dataclass(frozen=True)
+class MicroDopplerFrame:
+    """Long single-RX Doppler-time history for the lightweight tab."""
+
+    sequence: int
+    micro_doppler: np.ndarray
 
 
 class CaptureBuffer:
@@ -115,11 +124,35 @@ class DataProcessor(Thread):
                 self.capture_buffer.copy_latest_frame(active_half)
             )
             sequence += 1
-            rti, rdi, dti = self.signal_processor.process_time_features(
+            feature_frame = self._process_frame(adc_frame, sequence)
+            if feature_frame is not None:
+                self._publish_latest(feature_frame)
+
+    def _process_frame(self, adc_frame, sequence):
+        """Run only the DSP path selected by the visible tab."""
+
+        mode = self.signal_processor.runtime_state.feature_mode
+        if mode is FeatureMode.IDLE:
+            return None
+        if mode is FeatureMode.MICRO_DOPPLER:
+            micro_doppler = self.signal_processor.process_micro_doppler(
                 adc_frame, window_type_1d=Window.HANNING
             )
-            rai, rei = self.signal_processor.process_angle_features(adc_frame)
-            self._publish_latest(FeatureFrame(sequence, rti, dti, rdi, rai, rei))
+            if micro_doppler.size == 0:
+                return None
+            if self.signal_processor.runtime_state.feature_mode is mode:
+                return MicroDopplerFrame(sequence, micro_doppler)
+            return None
+
+        rti, rdi, dti = self.signal_processor.process_time_features(
+            adc_frame, window_type_1d=Window.HANNING
+        )
+        if self.signal_processor.runtime_state.feature_mode is not mode:
+            return None
+        rai, rei = self.signal_processor.process_angle_features(adc_frame)
+        if self.signal_processor.runtime_state.feature_mode is mode:
+            return FeatureFrame(sequence, rti, dti, rdi, rai, rei)
+        return None
 
     def _decode_frame(self, raw_frame):
         expected = self.radar_config.raw_values_per_frame

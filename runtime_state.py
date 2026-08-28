@@ -1,6 +1,15 @@
 """Thread-safe mutable state shared by the UI and DSP worker."""
 
+from enum import Enum
 from threading import Event, Lock
+
+
+class FeatureMode(Enum):
+    """DSP path selected by the currently visible feature tab."""
+
+    IDLE = "idle"
+    FULL = "full"
+    MICRO_DOPPLER = "micro_doppler"
 
 
 class RuntimeState:
@@ -11,6 +20,7 @@ class RuntimeState:
         self._gesture_interval_open = Event()
         self._gesture_ready = Event()
         self._lock = Lock()
+        self._feature_mode = FeatureMode.FULL
 
     @property
     def processing_enabled(self):
@@ -21,6 +31,17 @@ class RuntimeState:
             self._processing_enabled.set()
         else:
             self._processing_enabled.clear()
+
+    @property
+    def feature_mode(self):
+        with self._lock:
+            return self._feature_mode
+
+    def set_feature_mode(self, mode):
+        if not isinstance(mode, FeatureMode):
+            raise TypeError("mode must be a FeatureMode")
+        with self._lock:
+            self._feature_mode = mode
 
     def open_gesture_interval(self):
         self._gesture_interval_open.set()

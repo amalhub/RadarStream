@@ -42,10 +42,10 @@ class Iwr6843TlvParser:
 
             # Get the information about the profile configuration
             elif "profileCfg" in split_words[0]:
-                start_freq = int(split_words[2])
-                idle_time = int(split_words[3])
+                start_freq = float(split_words[2])
+                idle_time = float(split_words[3])
                 ramp_end_time = float(split_words[5])
-                freq_slope_const = int(split_words[8])
+                freq_slope_const = float(split_words[8])
                 num_adc_samples = int(split_words[10])
                 num_adc_samples_round_to2 = 1
 

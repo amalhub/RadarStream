@@ -44,6 +44,12 @@ class RadarSignalProcessor:
         self.rdi_history = deque(maxlen=history)
         self.rai_history = deque(maxlen=history)
         self.rei_history = deque(maxlen=history)
+        self.micro_doppler_history = deque(
+            maxlen=self.settings.micro_doppler_history_frames
+        )
+        self._micro_doppler_chirp_buffer = np.empty(
+            (0, self.radar.adc_samples), dtype=np.complex128
+        )
 
         angle_shape = (self.settings.angle_bins, self.settings.bins_processed)
         self.range_azimuth = np.zeros(angle_shape)
@@ -116,6 +122,72 @@ class RadarSignalProcessor:
         ] = 0
 
         return rti_output, rdi_frames, micro_doppler_output
+
+    def process_micro_doppler(
+        self,
+        adc_data,
+        window_type_1d=Window.HANNING,
+        clutter_removal_enabled=True,
+    ):
+        """Build a long Doppler-time strip from one physical RX channel.
+
+        This path deliberately avoids the range-Doppler and angle processing
+        used by the full feature tab.  The decoded virtual-channel layout puts
+        the first transmitter's physical RX channels first, so selecting an RX
+        index here uses exactly one antenna throughout the calculation.
+        """
+
+        self._validate_adc_frame(adc_data)
+        rx_channel = self.settings.micro_doppler_rx_channel
+        # Range processing is independent for every chirp, so frames can be
+        # concatenated afterwards without changing the result.  Unlike the
+        # gesture-model path, use all ADC samples from the dedicated profile.
+        selected = adc_data[:, :, rx_channel]
+        range_profiles = range_processing.range_processing(
+            2 * selected,
+            window_type_1d,
+            axis=1,
+            fft_size=selected.shape[1],
+        )
+        self._micro_doppler_chirp_buffer = np.concatenate(
+            (self._micro_doppler_chirp_buffer, range_profiles), axis=0
+        )
+
+        window_chirps = self.settings.micro_doppler_window_chirps
+        hop_chirps = self.settings.micro_doppler_hop_chirps
+        while self._micro_doppler_chirp_buffer.shape[0] >= window_chirps:
+            window = self._micro_doppler_chirp_buffer[:window_chirps]
+            if clutter_removal_enabled:
+                window = compensation.clutter_removal(window, axis=0)
+            # Sum linear Doppler power over range first, then convert to dB.
+            # Summing per-range logarithms makes the value scale with the
+            # number of ADC/range bins and saturated the previous fixed UI
+            # color range when the profile changed from 64 to 128 samples.
+            fft_input = np.transpose(window, axes=(1, 0))
+            fft_input = utils.windowing(fft_input, Window.HANNING, axis=1)
+            doppler_fft_output = np.fft.fft(fft_input, axis=1)
+            doppler_power = np.sum(np.abs(doppler_fft_output) ** 2, axis=0)
+            spectrum = 10 * np.log10(
+                np.maximum(doppler_power, np.finfo(float).tiny)
+            )
+            spectrum = np.fft.fftshift(spectrum)
+            spectrum[spectrum < self.settings.micro_doppler_noise_floor] = 0
+            self.micro_doppler_history.append(spectrum)
+            self._micro_doppler_chirp_buffer = (
+                self._micro_doppler_chirp_buffer[hop_chirps:]
+            )
+
+        if not self.micro_doppler_history:
+            return np.empty((0, window_chirps))
+        return np.asarray(self.micro_doppler_history)
+
+    def reset_micro_doppler_history(self):
+        """Start a fresh time strip when its tab is opened again."""
+
+        self.micro_doppler_history.clear()
+        self._micro_doppler_chirp_buffer = np.empty(
+            (0, self.radar.adc_samples), dtype=np.complex128
+        )
 
     def _update_gesture_trigger(self, distance_matrix):
         if not self.runtime_state.processing_enabled:

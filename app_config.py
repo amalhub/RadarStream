@@ -81,6 +81,10 @@ class DspConfig:
     gesture_delay_frames: int = 8
     rti_noise_floor: float = 3e3
     micro_doppler_noise_floor: float = 20.0
+    micro_doppler_history_frames: int = 256
+    micro_doppler_rx_channel: int = 0
+    micro_doppler_window_chirps: int = 128
+    micro_doppler_hop_chirps: int = 16
     angle_snr_offset: float = 14.7
     angle_snr_dead_zone: float = 1.8
     rti_display_stride: int = 16
@@ -99,6 +103,16 @@ class DspConfig:
             )
         if self.bins_processed > self.range_fft_bins:
             raise ValueError("bins_processed cannot exceed range_fft_bins")
+        if self.micro_doppler_history_frames <= 0:
+            raise ValueError("micro_doppler_history_frames must be positive")
+        if self.micro_doppler_rx_channel < 0:
+            raise ValueError("micro_doppler_rx_channel cannot be negative")
+        if self.micro_doppler_window_chirps <= 0:
+            raise ValueError("micro_doppler_window_chirps must be positive")
+        if not 0 < self.micro_doppler_hop_chirps <= self.micro_doppler_window_chirps:
+            raise ValueError(
+                "micro_doppler_hop_chirps must be within the window length"
+            )
         if len(self.azimuth_channels) != self.beamforming_antennas:
             raise ValueError("azimuth_channels must match beamforming_antennas")
         if len(self.elevation_channels) != self.beamforming_antennas:
@@ -150,6 +164,7 @@ class AppConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     serial: SerialPortConfig = field(default_factory=SerialPortConfig)
     paths: PathConfig = field(default_factory=PathConfig)
+    micro_doppler_only: bool = False
     feature_queue_size: int = 2
     ui_refresh_milliseconds: int = 10
     gesture_interval_milliseconds: int = 2000
@@ -160,7 +175,10 @@ class AppConfig:
 
     def __post_init__(self):
         channel_indices = self.dsp.azimuth_channels + self.dsp.elevation_channels
-        if max(channel_indices) >= self.radar.virtual_antennas:
+        if (
+            not self.micro_doppler_only
+            and max(channel_indices) >= self.radar.virtual_antennas
+        ):
             raise ValueError(
                 "当前 DSP 天线映射至少需要 {} 路虚拟天线，但所选配置只有 {} 路；"
                 "不同雷达的方位角/俯仰角阵列布局无法仅从 cfg 自动推断，请配置对应的 "
@@ -168,15 +186,27 @@ class AppConfig:
                     max(channel_indices) + 1, self.radar.virtual_antennas
                 )
             )
-        if self.radar.chirps_per_tx < self.dsp.beamforming_antennas:
+        if (
+            not self.micro_doppler_only
+            and self.radar.chirps_per_tx < self.dsp.beamforming_antennas
+        ):
             raise ValueError(
                 "chirps_per_tx must be at least the beamforming antenna count"
             )
         if self.feature_queue_size <= 0:
             raise ValueError("feature_queue_size must be positive")
+        if self.dsp.micro_doppler_rx_channel >= self.radar.rx_antennas:
+            raise ValueError(
+                "micro_doppler_rx_channel must select an available receive antenna"
+            )
 
     def with_radar_shape(
-        self, adc_samples, chirps_per_tx, tx_antennas, rx_antennas
+        self,
+        adc_samples,
+        chirps_per_tx,
+        tx_antennas,
+        rx_antennas,
+        micro_doppler_only=False,
     ):
         """Return a runtime config whose frame shape comes from a radar cfg."""
 
@@ -186,7 +216,11 @@ class AppConfig:
             tx_antennas=tx_antennas,
             rx_antennas=rx_antennas,
         )
-        return replace(self, radar=radar)
+        return replace(
+            self,
+            radar=radar,
+            micro_doppler_only=micro_doppler_only,
+        )
 
 
 # This is the fallback shape before a radar CLI file is selected. At runtime,
