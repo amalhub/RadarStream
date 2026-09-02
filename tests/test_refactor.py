@@ -31,6 +31,7 @@ from radar_dsp.utils import DOPPLER_IDX_TO_SIGNED, Window
 from radar_dsp.zoom_fft import ZoomFFT
 from radar_profile import RadarProfileShape, parse_radar_profile_shape
 from radar_tlv import Iwr6843TlvParser
+from radar_configurator import ConfigValidationError, Iwr6843ConfigEngine
 from runtime_state import FeatureMode, RuntimeState
 
 
@@ -38,6 +39,8 @@ UI_DEPENDENCIES_AVAILABLE = all(
     importlib.util.find_spec(module_name) is not None
     for module_name in ("PyQt5", "pyqtgraph", "serial")
 )
+if UI_DEPENDENCIES_AVAILABLE:
+    from PyQt5 import QtCore, QtGui, QtWidgets
 
 
 class StubCaptureBuffer:
@@ -99,20 +102,24 @@ class FakeSerialPort:
 
 
 class RuntimeStateTests(unittest.TestCase):
-    def test_gesture_events_are_consumed_once(self):
+    def test_capture_events_are_consumed_once(self):
         state = RuntimeState()
 
-        self.assertFalse(state.processing_enabled)
-        state.set_processing_enabled(True)
-        self.assertTrue(state.processing_enabled)
+        self.assertFalse(state.capture_enabled)
+        state.set_capture_enabled(True)
+        self.assertTrue(state.capture_enabled)
 
-        state.open_gesture_interval()
-        self.assertTrue(state.claim_gesture_interval())
-        self.assertFalse(state.claim_gesture_interval())
+        state.open_capture_interval()
+        self.assertTrue(state.claim_capture_interval())
+        self.assertFalse(state.claim_capture_interval())
 
-        state.mark_gesture_ready()
-        self.assertTrue(state.consume_gesture())
-        self.assertFalse(state.consume_gesture())
+        state.mark_capture_ready()
+        self.assertTrue(state.consume_capture())
+        self.assertFalse(state.consume_capture())
+
+        state.set_capture_enabled(False)
+        self.assertFalse(state.capture_enabled)
+        self.assertFalse(state.consume_capture())
 
     def test_feature_mode_defaults_to_full_and_can_switch(self):
         state = RuntimeState()
@@ -178,11 +185,11 @@ class ConfigurationTests(unittest.TestCase):
         bandwidth_mhz = float(profile[8]) * sample_time_us
         chirps_per_frame = (int(frame[2]) - int(frame[1]) + 1) * int(frame[3])
 
-        self.assertEqual((128, 32, 3, 4), shape.as_tuple())
-        self.assertEqual((15, 7), (int(channel[1]), int(channel[2])))
+        self.assertEqual((128, 128, 1, 1), shape.as_tuple())
+        self.assertEqual((1, 1), (int(channel[1]), int(channel[2])))
         self.assertAlmostEqual(1000.0, bandwidth_mhz, places=6)
-        self.assertAlmostEqual(3344.0, 1e6 / chirp_period_us, places=2)
-        self.assertEqual(96, chirps_per_frame)
+        self.assertAlmostEqual(3225.8, 1e6 / chirp_period_us, places=1)
+        self.assertEqual(128, chirps_per_frame)
         self.assertAlmostEqual(25.0, 1000 / float(frame[5]), places=6)
         self.assertAlmostEqual(40.0, float(frame[5]), places=6)
         self.assertLess(chirps_per_frame * chirp_period_us / 1000, 40.0)
@@ -193,7 +200,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertTrue(runtime_config.micro_doppler_only)
         parameters = Iwr6843TlvParser().parse_config(config_path)
         self.assertEqual(128, parameters["numRangeBins"])
-        self.assertEqual(32, parameters["numDopplerBins"])
+        self.assertEqual(128, parameters["numDopplerBins"])
 
     def test_profile_with_insufficient_virtual_antennas_is_rejected(self):
         shape = parse_radar_profile_shape("radar_configs/iwr1843.cfg")
@@ -239,6 +246,77 @@ class ConfigurationTests(unittest.TestCase):
 
         self.assertEqual("COM11", preferred.device)
 
+
+class RadarConfiguratorEngineTests(unittest.TestCase):
+    def setUp(self):
+        self.template_path = Path("radar_configs/iwr6843_micro_doppler.cfg")
+        self.engine = Iwr6843ConfigEngine(self.template_path)
+
+    def test_template_round_trip_preserves_capture_shape_and_commands(self):
+        values = self.engine.default_values()
+        generated = self.engine.render(values)
+        commands = [
+            line.split()[0]
+            for line in generated.splitlines()
+            if line.strip() and not line.startswith("%")
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "generated_micro_doppler.cfg"
+            target.write_text(generated, encoding="utf-8")
+            shape = parse_radar_profile_shape(target)
+
+        self.assertEqual((128, 128, 1, 1), shape.as_tuple())
+        self.assertEqual(
+            [
+                "flushCfg",
+                "dfeDataOutputMode",
+                "channelCfg",
+                "adcCfg",
+                "adcbufCfg",
+                "profileCfg",
+                "chirpCfg",
+                "frameCfg",
+                "lowPower",
+                "lvdsStreamCfg",
+                "testSrcCfg",
+                "sensorStart",
+            ],
+            commands,
+        )
+
+    def test_existing_config_values_drive_calculated_metrics(self):
+        values = self.engine.default_values()
+        metrics = self.engine.metrics(values)
+
+        self.assertAlmostEqual(1000.0, metrics.bandwidth_mhz)
+        self.assertAlmostEqual(25.0, metrics.frame_rate_hz)
+        self.assertAlmostEqual(39.68, metrics.active_frame_time_ms)
+        self.assertEqual((1, 1), (metrics.rx_antennas, metrics.tx_antennas))
+
+    def test_invalid_adc_window_cannot_generate_config(self):
+        values = self.engine.with_value(
+            self.engine.default_values(), "ramp_end_time_us", 10
+        )
+
+        with self.assertRaises(ConfigValidationError):
+            self.engine.render(values)
+
+    def test_parameter_constraints_follow_cross_field_validation(self):
+        values = self.engine.default_values()
+        constraints = self.engine.parameter_constraints(values)
+
+        self.assertEqual((60.0, 62.75), constraints["start_frequency_ghz"])
+        self.assertEqual((38.0, 42.5), constraints["ramp_end_time_us"])
+        self.assertAlmostEqual(39.68, constraints["frame_period_ms"][0])
+        self.assertAlmostEqual(
+            3764.705882,
+            constraints["sample_rate_ksps"][0],
+            places=6,
+        )
+
+
+class DcaControllerTests(unittest.TestCase):
     def test_dca_command_builder_rejects_unknown_command(self):
         with self.assertRaises(ValueError):
             Dca1000Controller.build_command("unknown")
@@ -600,7 +678,7 @@ class SignalProcessorTests(unittest.TestCase):
         self.assertEqual((1, 128), selected_result.shape)
         self.assertGreater(np.count_nonzero(selected_result), 0)
 
-    def test_micro_doppler_flattens_frames_before_128_by_16_windows(self):
+    def test_micro_doppler_flattens_frames_with_configured_hop(self):
         config = AppConfig().with_radar_shape(
             128, 128, 1, 1, micro_doppler_only=True
         )
@@ -613,9 +691,9 @@ class SignalProcessorTests(unittest.TestCase):
         third = processor.process_micro_doppler(frame)
 
         self.assertEqual((1, 128), first.shape)
-        self.assertEqual((9, 128), second.shape)
-        self.assertEqual((17, 128), third.shape)
-        self.assertEqual(112, processor._micro_doppler_chirp_buffer.shape[0])
+        self.assertEqual((5, 128), second.shape)
+        self.assertEqual((9, 128), third.shape)
+        self.assertEqual(96, processor._micro_doppler_chirp_buffer.shape[0])
         self.assertTrue(np.isfinite(third).all())
 
     def test_noncanonical_adc_layout_is_rejected(self):
@@ -629,6 +707,164 @@ class SignalProcessorTests(unittest.TestCase):
 
 @unittest.skipUnless(UI_DEPENDENCIES_AVAILABLE, "optional UI dependencies unavailable")
 class ApplicationLifecycleTests(unittest.TestCase):
+    def test_configurator_is_mounted_in_its_dock_and_loads_template(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        application.qt_app.processEvents()
+        try:
+            panel = application.radar_config_panel
+            self.assertIs(panel, application.ui.radarConfigDock.contentWidget)
+            self.assertEqual(
+                "iwr6843_micro_doppler.cfg",
+                Path(panel.selected_config_path()).name,
+            )
+            self.assertEqual(
+                128,
+                int(panel.parameter_controls["adc_samples"].value()),
+            )
+            start_frequency = panel.parameter_controls["start_frequency_ghz"]
+            self.assertIsInstance(start_frequency.layout(), QtWidgets.QHBoxLayout)
+            self.assertLess(
+                start_frequency.layout().indexOf(start_frequency.label),
+                start_frequency.layout().indexOf(start_frequency.slider),
+            )
+            self.assertLess(
+                start_frequency.layout().indexOf(start_frequency.slider),
+                start_frequency.layout().indexOf(start_frequency.spin),
+            )
+            self.assertEqual(60.0, start_frequency.slider.valid_minimum)
+            self.assertEqual(62.75, start_frequency.slider.valid_maximum)
+
+            ramp_end = panel.parameter_controls["ramp_end_time_us"]
+            panel._parameter_changed("ramp_end_time_us", 10)
+            self.assertTrue(ramp_end.slider._invalid)
+            self.assertIn("#ff7b82", ramp_end.spin.styleSheet())
+            panel._parameter_changed("ramp_end_time_us", 40)
+            self.assertFalse(ramp_end.slider._invalid)
+            self.assertIn("#ffffff", ramp_end.spin.styleSheet())
+
+            panel._parameter_changed("frame_period_ms", 41)
+
+            self.assertTrue(panel.uses_generated_config())
+            self.assertIn("frameCfg 0 0 128 0 41 1 0", panel.current_config_text())
+            panel.refresh_config_files()
+            self.assertEqual(
+                41,
+                int(panel.parameter_controls["frame_period_ms"].value()),
+            )
+
+            panel.source_combo.setCurrentIndex(
+                panel.source_combo.findData(panel.EXISTING_SOURCE)
+            )
+
+            self.assertEqual(
+                40,
+                int(panel.parameter_controls["frame_period_ms"].value()),
+            )
+        finally:
+            application.refresh_timer.stop()
+            application.capture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_channel_masks_are_edited_with_named_checkboxes(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        application.qt_app.processEvents()
+        try:
+            panel = application.radar_config_panel
+            self.assertEqual(
+                ["RX1", "RX2", "RX3", "RX4"],
+                [checkbox.text() for checkbox in panel.rx_channel_checks],
+            )
+            self.assertEqual(
+                ["TX1", "TX2", "TX3"],
+                [checkbox.text() for checkbox in panel.tx_channel_checks],
+            )
+            self.assertEqual(
+                [True, False, False, False],
+                [checkbox.isChecked() for checkbox in panel.rx_channel_checks],
+            )
+            self.assertEqual(
+                [True, False, False],
+                [checkbox.isChecked() for checkbox in panel.tx_channel_checks],
+            )
+
+            panel.rx_channel_checks[1].setChecked(True)
+            panel.tx_channel_checks[2].setChecked(True)
+            panel.tx_channel_checks[0].setChecked(False)
+
+            self.assertEqual(3, panel.values.rx_channel_mask)
+            self.assertEqual(4, panel.values.tx_channel_mask)
+            self.assertIn("channelCfg 3 4 0", panel.current_config_text())
+
+            panel.tx_channel_checks[2].setChecked(False)
+            self.assertEqual(0, panel.values.tx_channel_mask)
+            self.assertFalse(panel.send_button.isEnabled())
+            self.assertIn("#b42318", panel.tx_channel_checks[0].styleSheet())
+        finally:
+            application.refresh_timer.stop()
+            application.capture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_generated_config_is_sent_from_a_temporary_file(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        panel = application.radar_config_panel
+        panel.source_combo.setCurrentIndex(
+            panel.source_combo.findData(panel.GENERATED_SOURCE)
+        )
+        application.cli_port_name = "COM11"
+        captured = {}
+
+        def capture_config(config_path, com_port):
+            captured["path"] = config_path
+            captured["text"] = Path(config_path).read_text(encoding="utf-8")
+            captured["port"] = com_port
+
+        try:
+            with patch.object(application, "_apply_radar_profile") as apply_profile:
+                with patch.object(
+                    application, "open_radar", side_effect=capture_config
+                ):
+                    application.send_radar_config()
+
+            self.assertEqual("COM11", captured["port"])
+            self.assertIn("profileCfg", captured["text"])
+            self.assertIn("lvdsStreamCfg", captured["text"])
+            self.assertFalse(Path(captured["path"]).exists())
+            apply_profile.assert_called_once()
+        finally:
+            application.refresh_timer.stop()
+            application.capture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_single_channel_saved_config_is_inferred_as_micro_doppler(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application.cli_port_name = "COM11"
+        source = Path("radar_configs/iwr6843_micro_doppler.cfg").read_text(
+            encoding="utf-8"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "saved_without_mode_marker.cfg"
+            config_path.write_text(source, encoding="utf-8")
+            with patch.object(application, "_apply_radar_profile") as apply_profile:
+                with patch.object(application, "open_radar"):
+                    with patch.object(application, "print_log"):
+                        application._send_radar_config_file(str(config_path))
+
+        self.assertTrue(apply_profile.call_args[1]["micro_doppler_only"])
+
     def test_application_run_does_not_initialize_capture_hardware(self):
         import main
 
@@ -683,10 +919,12 @@ class ApplicationLifecycleTests(unittest.TestCase):
             application._build_ui()
         try:
             self.assertEqual("COM11", application.cli_port_name)
-            self.assertEqual("COM11", application.ui.comboBox_8.currentText())
+            self.assertEqual(
+                "COM11", application.radar_config_panel.cli_combo.currentText()
+            )
         finally:
             application.refresh_timer.stop()
-            application.gesture_interval_timer.stop()
+            application.capture_interval_timer.stop()
             application.main_window.close()
             application.shutdown()
 
@@ -704,6 +942,149 @@ class ApplicationLifecycleTests(unittest.TestCase):
         self.assertEqual(application.config, application.signal_processor.config)
         self.assertEqual(application.config, application.ui.config)
 
+    def test_main_window_contains_four_independent_docks(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        try:
+            docks = (
+                application.ui.radarDataDock,
+                application.ui.radarConfigDock,
+                application.ui.captureDock,
+                application.ui.logDock,
+            )
+            required_features = (
+                QtWidgets.QDockWidget.DockWidgetClosable
+                | QtWidgets.QDockWidget.DockWidgetMovable
+                | QtWidgets.QDockWidget.DockWidgetFloatable
+            )
+            self.assertEqual(4, len(docks))
+            for dock in docks:
+                self.assertEqual(
+                    required_features,
+                    dock.features() & required_features,
+                )
+                self.assertIn(
+                    dock.toggleViewAction(), application.ui.windowMenu.actions()
+                )
+                self.assertIn("border: 1px", dock.customTitleBar.styleSheet())
+                self.assertIn("border: 1px", dock.contentFrame.styleSheet())
+                self.assertIn("border-top: 0", dock.contentFrame.styleSheet())
+
+            self.assertTrue(application.ui.displayModeGroup.isExclusive())
+            self.assertEqual(2, len(application.ui.displayModeGroup.actions()))
+            self.assertFalse(hasattr(application.ui, "tabWidget"))
+            self.assertEqual("日志显示", application.ui.logDock.windowTitle())
+            application.ui.logTextEdit.setPlainText("temporary log")
+            application.ui.clearLogButton.click()
+            self.assertEqual("", application.ui.logTextEdit.toPlainText())
+
+            guide = application.ui.dockGuideOverlay
+            guide.begin_drag(application.ui.radarConfigDock)
+            target = guide.guide_rects()[QtCore.Qt.LeftDockWidgetArea].center()
+            guide.update_drag(guide.mapToGlobal(target))
+            self.assertTrue(guide.isVisible())
+            self.assertEqual(QtCore.Qt.LeftDockWidgetArea, guide.target_area)
+            guide.finish_drag(guide.mapToGlobal(target))
+            application.qt_app.processEvents()
+            self.assertEqual(
+                QtCore.Qt.LeftDockWidgetArea,
+                application.main_window.dockWidgetArea(
+                    application.ui.radarConfigDock
+                ),
+            )
+        finally:
+            application.refresh_timer.stop()
+            application.capture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
+    def test_title_drag_uses_guide_and_restores_previous_dock_ratio(self):
+        import main
+
+        application = main.RadarStreamApplication()
+        application._build_ui()
+        application.qt_app.processEvents()
+        data_dock = application.ui.radarDataDock
+        config_dock = application.ui.radarConfigDock
+        title_bar = data_dock.customTitleBar
+        before_widths = (data_dock.width(), config_dock.width())
+
+        def mouse_event(kind, local, global_position, button, buttons):
+            return QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(local),
+                QtCore.QPointF(global_position),
+                button,
+                buttons,
+                QtCore.Qt.NoModifier,
+            )
+
+        try:
+            start_local = title_bar.rect().center()
+            start_global = title_bar.mapToGlobal(start_local)
+            title_bar.mousePressEvent(
+                mouse_event(
+                    QtCore.QEvent.MouseButtonPress,
+                    start_local,
+                    start_global,
+                    QtCore.Qt.LeftButton,
+                    QtCore.Qt.LeftButton,
+                )
+            )
+            move_global = start_global + QtCore.QPoint(30, 10)
+            title_bar.mouseMoveEvent(
+                mouse_event(
+                    QtCore.QEvent.MouseMove,
+                    title_bar.mapFromGlobal(move_global),
+                    move_global,
+                    QtCore.Qt.NoButton,
+                    QtCore.Qt.LeftButton,
+                )
+            )
+
+            guide = application.ui.dockGuideOverlay
+            self.assertTrue(data_dock.isFloating())
+            self.assertTrue(guide.isVisible())
+            target_global = guide.mapToGlobal(
+                guide.guide_rects()[QtCore.Qt.LeftDockWidgetArea].center()
+            )
+            title_bar.mouseMoveEvent(
+                mouse_event(
+                    QtCore.QEvent.MouseMove,
+                    title_bar.mapFromGlobal(target_global),
+                    target_global,
+                    QtCore.Qt.NoButton,
+                    QtCore.Qt.LeftButton,
+                )
+            )
+            title_bar.mouseReleaseEvent(
+                mouse_event(
+                    QtCore.QEvent.MouseButtonRelease,
+                    title_bar.mapFromGlobal(target_global),
+                    target_global,
+                    QtCore.Qt.LeftButton,
+                    QtCore.Qt.NoButton,
+                )
+            )
+            for _ in range(3):
+                application.qt_app.processEvents()
+
+            self.assertFalse(data_dock.isFloating())
+            self.assertFalse(guide.isVisible())
+            self.assertEqual(
+                QtCore.Qt.LeftDockWidgetArea,
+                application.main_window.dockWidgetArea(data_dock),
+            )
+            self.assertAlmostEqual(before_widths[0], data_dock.width(), delta=2)
+            self.assertAlmostEqual(before_widths[1], config_dock.width(), delta=2)
+        finally:
+            application.refresh_timer.stop()
+            application.capture_interval_timer.stop()
+            application.main_window.close()
+            application.shutdown()
+
     def test_feature_views_fill_responsive_grid_cells(self):
         import main
 
@@ -712,22 +1093,44 @@ class ApplicationLifecycleTests(unittest.TestCase):
         application.qt_app.processEvents()
         try:
             view_names = {
-                "rdi": "graphicsView_6",
-                "rai": "graphicsView_4",
-                "rti": "graphicsView",
-                "dti": "graphicsView_2",
-                "rei": "graphicsView_3",
+                "rdi": "rangeDopplerView",
+                "rai": "rangeAzimuthView",
+                "rti": "rangeTimeView",
+                "dti": "dopplerTimeView",
+                "rei": "rangeElevationView",
+            }
+            expected_grid_positions = {
+                "rangeTimeView": (0, 0, 1, 1),
+                "dopplerTimeView": (0, 1, 1, 1),
+                "rangeElevationView": (0, 2, 1, 1),
+                "rangeDopplerView": (1, 0, 1, 1),
+                "rangeAzimuthView": (1, 1, 1, 1),
             }
             for feature_name, widget_name in view_names.items():
                 widget = getattr(application.ui, widget_name)
                 view = application.feature_views[feature_name]
                 self.assertIs(view, widget.centralWidget)
+                self.assertIn("border: 1px", widget.styleSheet())
                 self.assertGreater(widget.maximumWidth(), 255)
                 self.assertAlmostEqual(widget.width(), view.width(), delta=2)
                 self.assertAlmostEqual(widget.height(), view.height(), delta=2)
+                cell = widget.parentWidget()
+                grid_index = application.ui.featureGrid.indexOf(cell)
+                self.assertEqual(
+                    expected_grid_positions[widget_name],
+                    application.ui.featureGrid.getItemPosition(grid_index),
+                )
 
                 image = application.images[feature_name]
                 image.setImage(np.ones((10, 20)))
+
+            reference_width = application.ui.rangeTimeView.width()
+            for widget_name in expected_grid_positions:
+                self.assertAlmostEqual(
+                    reference_width,
+                    getattr(application.ui, widget_name).width(),
+                    delta=2,
+                )
 
             application.qt_app.processEvents()
             for feature_name in view_names:
@@ -742,19 +1145,25 @@ class ApplicationLifecycleTests(unittest.TestCase):
                 )
         finally:
             application.refresh_timer.stop()
-            application.gesture_interval_timer.stop()
+            application.capture_interval_timer.stop()
             application.main_window.close()
             application.shutdown()
 
-    def test_micro_doppler_tab_switches_processing_path_and_updates_strip(self):
+    def test_display_menu_switches_processing_path_and_updates_strip(self):
         import main
 
         application = main.RadarStreamApplication()
         application._build_ui()
         try:
-            application.ui.tabWidget.setCurrentWidget(application.ui.tab_2)
+            application.ui.microDopplerAction.trigger()
             application.qt_app.processEvents()
 
+            self.assertTrue(application.ui.microDopplerAction.isChecked())
+            self.assertFalse(application.ui.fullFeatureAction.isChecked())
+            self.assertIs(
+                application.ui.microDopplerPage,
+                application.ui.dataDisplayStack.currentWidget(),
+            )
             self.assertIs(
                 FeatureMode.MICRO_DOPPLER,
                 application.runtime_state.feature_mode,
@@ -775,16 +1184,20 @@ class ApplicationLifecycleTests(unittest.TestCase):
                 application._robust_micro_doppler_levels(feature),
             )
 
-            application.ui.tabWidget.setCurrentWidget(application.ui.tab)
+            application.ui.fullFeatureAction.trigger()
             application.qt_app.processEvents()
+            self.assertIs(
+                application.ui.fullFeaturePage,
+                application.ui.dataDisplayStack.currentWidget(),
+            )
             self.assertIs(FeatureMode.FULL, application.runtime_state.feature_mode)
         finally:
             application.refresh_timer.stop()
-            application.gesture_interval_timer.stop()
+            application.capture_interval_timer.stop()
             application.main_window.close()
             application.shutdown()
 
-    def test_single_channel_profile_opens_micro_tab_and_idles_on_full_tab(self):
+    def test_single_channel_profile_forces_micro_doppler_menu_mode(self):
         import main
 
         application = main.RadarStreamApplication()
@@ -799,21 +1212,19 @@ class ApplicationLifecycleTests(unittest.TestCase):
             )
 
             self.assertTrue(application.config.micro_doppler_only)
+            self.assertFalse(application.ui.fullFeatureAction.isEnabled())
+            self.assertTrue(application.ui.microDopplerAction.isChecked())
             self.assertIs(
-                application.ui.tab_2,
-                application.ui.tabWidget.currentWidget(),
+                application.ui.microDopplerPage,
+                application.ui.dataDisplayStack.currentWidget(),
             )
             self.assertIs(
                 FeatureMode.MICRO_DOPPLER,
                 application.runtime_state.feature_mode,
             )
-
-            application.ui.tabWidget.setCurrentWidget(application.ui.tab)
-            application.qt_app.processEvents()
-            self.assertIs(FeatureMode.IDLE, application.runtime_state.feature_mode)
         finally:
             application.refresh_timer.stop()
-            application.gesture_interval_timer.stop()
+            application.capture_interval_timer.stop()
             application.main_window.close()
             application.shutdown()
 

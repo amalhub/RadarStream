@@ -58,7 +58,7 @@ class RadarFrameConfig:
 
 @dataclass(frozen=True)
 class DspConfig:
-    """Feature extraction and gesture-trigger parameters."""
+    """Feature extraction and event-triggered capture parameters."""
 
     history_frames: int = 12
     range_fft_bins: int = 64
@@ -78,13 +78,13 @@ class DspConfig:
     detection_threshold: float = 3e3
     detection_min_points: int = 14
     detection_required_frames: int = 2
-    gesture_delay_frames: int = 8
+    capture_delay_frames: int = 8
     rti_noise_floor: float = 3e3
     micro_doppler_noise_floor: float = 20.0
     micro_doppler_history_frames: int = 256
     micro_doppler_rx_channel: int = 0
     micro_doppler_window_chirps: int = 128
-    micro_doppler_hop_chirps: int = 16
+    micro_doppler_hop_chirps: int = 32
     angle_snr_offset: float = 14.7
     angle_snr_dead_zone: float = 1.8
     rti_display_stride: int = 16
@@ -98,8 +98,8 @@ class DspConfig:
             raise ValueError("history_frames must be at least 12 for UI feature windows")
         if self.range_fft_bins != 64 or self.bins_processed != 64:
             raise ValueError(
-                "The current feature model expects 64 range FFT bins; "
-                "update DSP and model preprocessing together before changing them"
+                "The current full-feature pipeline expects 64 range FFT bins; "
+                "update its preprocessing before changing them"
             )
         if self.bins_processed > self.range_fft_bins:
             raise ValueError("bins_processed cannot exceed range_fft_bins")
@@ -145,16 +145,11 @@ class SerialPortConfig:
 class PathConfig:
     project_root: Path = PROJECT_ROOT
     radar_config_dir: Path = PROJECT_ROOT / "radar_configs"
-    model_dir: Path = PROJECT_ROOT / "model_checkpoints"
     dataset_dir: Path = PROJECT_ROOT / "dataset"
     assets_dir: Path = PROJECT_ROOT / "assets"
     media_dir: Path = PROJECT_ROOT / "assets" / "media"
-    gesture_icon_dir: Path = PROJECT_ROOT / "assets" / "gesture_icons"
     cad_dir: Path = PROJECT_ROOT / "assets" / "cad"
     capture_library: Path = PROJECT_ROOT / "native" / "UDPCAPTUREADCRAWDATA.dll"
-
-    def gesture_icon(self, gesture_id):
-        return self.gesture_icon_dir / (str(gesture_id) + ".jpg")
 
 
 @dataclass(frozen=True)
@@ -167,7 +162,7 @@ class AppConfig:
     micro_doppler_only: bool = False
     feature_queue_size: int = 2
     ui_refresh_milliseconds: int = 10
-    gesture_interval_milliseconds: int = 2000
+    capture_interval_milliseconds: int = 2000
     rti_levels: Tuple[float, float] = (0, 1e4)
     rdi_levels: Tuple[float, float] = (2e4, 4e5)
     angle_levels: Tuple[float, float] = (0, 8)

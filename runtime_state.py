@@ -5,9 +5,8 @@ from threading import Event, Lock
 
 
 class FeatureMode(Enum):
-    """DSP path selected by the currently visible feature tab."""
+    """DSP path selected from the display-mode menu."""
 
-    IDLE = "idle"
     FULL = "full"
     MICRO_DOPPLER = "micro_doppler"
 
@@ -16,21 +15,23 @@ class RuntimeState:
     """Named events replace the old string-keyed global dictionary."""
 
     def __init__(self):
-        self._processing_enabled = Event()
-        self._gesture_interval_open = Event()
-        self._gesture_ready = Event()
+        self._capture_enabled = Event()
+        self._capture_interval_open = Event()
+        self._capture_ready = Event()
         self._lock = Lock()
         self._feature_mode = FeatureMode.FULL
 
     @property
-    def processing_enabled(self):
-        return self._processing_enabled.is_set()
+    def capture_enabled(self):
+        return self._capture_enabled.is_set()
 
-    def set_processing_enabled(self, enabled):
+    def set_capture_enabled(self, enabled):
         if enabled:
-            self._processing_enabled.set()
+            self._capture_enabled.set()
         else:
-            self._processing_enabled.clear()
+            self._capture_enabled.clear()
+            self._capture_interval_open.clear()
+            self._capture_ready.clear()
 
     @property
     def feature_mode(self):
@@ -43,26 +44,27 @@ class RuntimeState:
         with self._lock:
             self._feature_mode = mode
 
-    def open_gesture_interval(self):
-        self._gesture_interval_open.set()
+    def open_capture_interval(self):
+        if self._capture_enabled.is_set():
+            self._capture_interval_open.set()
 
-    def claim_gesture_interval(self):
-        """Atomically claim the current gesture interval if it is open."""
+    def claim_capture_interval(self):
+        """Atomically claim the current capture interval if it is open."""
 
         with self._lock:
-            if not self._gesture_interval_open.is_set():
+            if not self._capture_interval_open.is_set():
                 return False
-            self._gesture_interval_open.clear()
+            self._capture_interval_open.clear()
             return True
 
-    def mark_gesture_ready(self):
-        self._gesture_ready.set()
+    def mark_capture_ready(self):
+        self._capture_ready.set()
 
-    def consume_gesture(self):
-        """Return and clear the pending gesture notification."""
+    def consume_capture(self):
+        """Return and clear the pending feature-capture notification."""
 
         with self._lock:
-            if not self._gesture_ready.is_set():
+            if not self._capture_ready.is_set():
                 return False
-            self._gesture_ready.clear()
+            self._capture_ready.clear()
             return True

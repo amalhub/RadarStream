@@ -2,7 +2,9 @@
 
 import html
 import os
+from pathlib import Path
 import sys
+import tempfile
 import time
 from queue import Empty, Queue
 
@@ -29,39 +31,19 @@ from hardware_interfaces import (
     select_preferred_cli_port,
 )
 from radar_profile import parse_radar_profile_shape
-from radar_tlv import Iwr6843TlvParser
+from radar_configurator.widget import RadarConfigPanel
 from runtime_state import FeatureMode, RuntimeState
 from signal_processor import RadarSignalProcessor
-from generated_ui import GestureOverlayWindow, Ui_MainWindow
-
-
-GESTURE_NAMES = {
-    0: "backward",
-    1: "dbclick",
-    2: "down",
-    3: "front",
-    4: "Left",
-    5: "Right",
-    6: "up",
-    7: "NO",
-}
+from main_window_ui import Ui_MainWindow
 
 
 class RadarStreamApplication:
     """Compose hardware, processing, runtime state and PyQt widgets."""
 
-    def __init__(
-        self,
-        config=DEFAULT_CONFIG,
-        model_factory=None,
-        gesture_predictor=None,
-    ):
+    def __init__(self, config=DEFAULT_CONFIG):
         self.base_config = config
         self.config = config
         self.runtime_state = RuntimeState()
-        self.model_factory = model_factory
-        self.gesture_predictor = gesture_predictor
-        self.model = None
 
         self.feature_queue = Queue(maxsize=config.feature_queue_size)
         self.signal_processor = RadarSignalProcessor(config, self.runtime_state)
@@ -79,7 +61,7 @@ class RadarStreamApplication:
         self.qt_app = None
         self.main_window = None
         self.ui = None
-        self.sub_window = None
+        self.radar_config_panel = None
         self.images = {}
         self.feature_views = {}
 
@@ -141,46 +123,57 @@ class RadarStreamApplication:
         self.main_window = QtWidgets.QMainWindow()
         self.ui = Ui_MainWindow(self.config, self.runtime_state)
         self.ui.setupUi(self.main_window)
-        self.sub_window = GestureOverlayWindow(
-            self.main_window, self.config.paths.gesture_icon_dir
-        )
+        self._install_radar_config_panel()
 
         self._configure_feature_views()
         self._connect_signals()
-        self._on_tab_changed(self.ui.tabWidget.currentIndex())
+        self._update_display_mode_availability()
         self.update_com_ports()
 
         self.refresh_timer = QtCore.QTimer(self.main_window)
         self.refresh_timer.timeout.connect(self.update_figure)
         self.refresh_timer.start(self.config.ui_refresh_milliseconds)
 
-        self.gesture_interval_timer = QtCore.QTimer(self.main_window)
-        self.gesture_interval_timer.timeout.connect(
-            self.runtime_state.open_gesture_interval
+        self.capture_interval_timer = QtCore.QTimer(self.main_window)
+        self.capture_interval_timer.timeout.connect(
+            self.runtime_state.open_capture_interval
         )
-        self.gesture_interval_timer.start(
-            self.config.gesture_interval_milliseconds
+        self.capture_interval_timer.start(
+            self.config.capture_interval_milliseconds
         )
-        self.runtime_state.open_gesture_interval()
+        self.runtime_state.open_capture_interval()
+        self.print_log("Welcome!", "green")
         self.main_window.show()
+
+    def _install_radar_config_panel(self):
+        """Mount the reusable cfg component in its own dock."""
+
+        template_path = (
+            self.config.paths.radar_config_dir
+            / "iwr6843_micro_doppler.cfg"
+        )
+        panel = RadarConfigPanel(
+            template_path=template_path,
+            config_dir=self.config.paths.radar_config_dir,
+            parent=self.ui.radarConfigDock,
+        )
+        self.ui.set_dock_content(self.ui.radarConfigDock, panel)
+        self.radar_config_panel = panel
 
     def _configure_feature_views(self):
         view_names = {
-            "rdi": "graphicsView_6",
-            "rai": "graphicsView_4",
-            "rti": "graphicsView",
-            "dti": "graphicsView_2",
-            "rei": "graphicsView_3",
+            "rdi": "rangeDopplerView",
+            "rai": "rangeAzimuthView",
+            "rti": "rangeTimeView",
+            "dti": "dopplerTimeView",
+            "rei": "rangeElevationView",
         }
         color_map = pg_get_cmap("customize")
         lookup_table = color_map.getLookupTable(0.0, 1.0, 256)
 
-        # The generated UI used fixed 255 x 255 panels. Make all six feature
-        # cells participate in the grid layout so they tile the available
-        # window space instead of leaving unused margins.
         feature_widgets = [
             getattr(self.ui, widget_name) for widget_name in view_names.values()
-        ] + [self.ui.graphicsView_5]
+        ]
         for widget in feature_widgets:
             widget.setSizePolicy(
                 QtWidgets.QSizePolicy.Expanding,
@@ -188,9 +181,6 @@ class RadarStreamApplication:
             )
             widget.setMinimumSize(QtCore.QSize(160, 160))
             widget.setMaximumSize(QtCore.QSize(16777215, 16777215))
-        for column in range(3):
-            self.ui.gridLayout.setColumnStretch(column, 1)
-
         for feature_name, widget_name in view_names.items():
             widget = getattr(self.ui, widget_name)
             # GraphicsLayoutWidget already owns a GraphicsLayout. Adding a
@@ -222,31 +212,57 @@ class RadarStreamApplication:
         self.feature_views["micro_doppler"] = micro_doppler_view
         self.images["micro_doppler"] = micro_doppler_image
 
-        neutral_icon = str(self.config.paths.gesture_icon(7))
-        self.ui.graphicsView_5.setAlignment(QtCore.Qt.AlignCenter)
-        self.ui.graphicsView_5.setPixmap(QtGui.QPixmap(neutral_icon))
-
     def _connect_signals(self):
-        self.ui.comboBox_8.arrowClicked.connect(self.update_com_ports)
-        self.ui.comboBox_8.currentIndexChanged.connect(self.set_serial_port)
-        self.ui.comboBox.currentIndexChanged.connect(self.set_color)
-        self.ui.comboBox_2.currentIndexChanged.connect(self.load_model)
-        self.ui.comboBox_7.currentIndexChanged.connect(self.show_radar_parameters)
-        self.ui.comboBox_3.currentIndexChanged.connect(self.select_dataset_scene)
-        self.ui.lineEdit_6.editingFinished.connect(self.select_dataset_scene)
-        self.ui.pushButton_11.clicked.connect(self.send_radar_config)
-        self.ui.actionload.triggered.connect(self.show_sub_window)
-        self.ui.pushButton_12.clicked.connect(self.qt_app.exit)
-        self.ui.tabWidget.currentChanged.connect(self._on_tab_changed)
+        self.radar_config_panel.cli_combo.popupAboutToShow.connect(
+            self.update_com_ports
+        )
+        self.radar_config_panel.cli_combo.currentIndexChanged.connect(
+            self.set_serial_port
+        )
+        self.ui.colorMapCombo.currentIndexChanged.connect(self.set_color)
+        self.radar_config_panel.configSelectionChanged.connect(
+            self.show_radar_parameters
+        )
+        self.radar_config_panel.configSaved.connect(
+            lambda path: self.print_log("配置已保存：{}".format(path), "green")
+        )
+        self.ui.captureSceneCombo.currentIndexChanged.connect(
+            self.select_dataset_scene
+        )
+        self.ui.captureSubjectEdit.editingFinished.connect(
+            self.select_dataset_scene
+        )
+        self.ui.captureButton.toggled.connect(self._set_capture_enabled)
+        self.radar_config_panel.sendRequested.connect(self.send_radar_config)
+        self.radar_config_panel.exitRequested.connect(self.qt_app.exit)
+        self.ui.fullFeatureAction.triggered.connect(
+            lambda checked: checked and self._set_display_mode(FeatureMode.FULL)
+        )
+        self.ui.microDopplerAction.triggered.connect(
+            lambda checked: checked
+            and self._set_display_mode(FeatureMode.MICRO_DOPPLER)
+        )
 
-    def _on_tab_changed(self, index):
-        selected_tab = self.ui.tabWidget.widget(index)
-        if selected_tab is self.ui.tab_2:
+    def _set_display_mode(self, mode):
+        """Select one DSP/display path from the mutually exclusive menu."""
+
+        if mode is FeatureMode.FULL and self.config.micro_doppler_only:
+            self.ui.microDopplerAction.setChecked(True)
             mode = FeatureMode.MICRO_DOPPLER
-        elif self.config.micro_doppler_only:
-            mode = FeatureMode.IDLE
-        else:
-            mode = FeatureMode.FULL
+
+        page = (
+            self.ui.microDopplerPage
+            if mode is FeatureMode.MICRO_DOPPLER
+            else self.ui.fullFeaturePage
+        )
+        action = (
+            self.ui.microDopplerAction
+            if mode is FeatureMode.MICRO_DOPPLER
+            else self.ui.fullFeatureAction
+        )
+        action.setChecked(True)
+        self.ui.dataDisplayStack.setCurrentWidget(page)
+
         if (
             mode is FeatureMode.MICRO_DOPPLER
             and self.runtime_state.feature_mode is not mode
@@ -260,6 +276,25 @@ class RadarStreamApplication:
                 self.feature_queue.get_nowait()
         except Empty:
             pass
+
+        capture_available = mode is FeatureMode.FULL
+        if not capture_available and self.ui.captureButton.isChecked():
+            self.ui.captureButton.setChecked(False)
+        self.ui.captureButton.setEnabled(capture_available)
+        self.ui.captureButton.setToolTip(
+            "" if capture_available else "采集仅适用于多维特征显示模式"
+        )
+
+    def _update_display_mode_availability(self):
+        """Keep display choices compatible with the active radar profile."""
+
+        self.ui.fullFeatureAction.setEnabled(not self.config.micro_doppler_only)
+        if self.config.micro_doppler_only:
+            self._set_display_mode(FeatureMode.MICRO_DOPPLER)
+        elif self.ui.microDopplerAction.isChecked():
+            self._set_display_mode(FeatureMode.MICRO_DOPPLER)
+        else:
+            self._set_display_mode(FeatureMode.FULL)
 
     def update_figure(self):
         try:
@@ -305,8 +340,20 @@ class RadarStreamApplication:
             levels=self.config.angle_levels,
         )
 
-        if self.runtime_state.consume_gesture():
-            self._handle_gesture(features, rti_feature)
+        if (
+            self.runtime_state.consume_capture()
+            and self.ui.captureButton.isChecked()
+            and self.dataset_scene_dir is not None
+        ):
+            self._save_feature_views(
+                (
+                    rti_feature,
+                    features.dti,
+                    features.rdi[:, :, :, 0],
+                    features.rai,
+                    features.rei,
+                )
+            )
 
     @staticmethod
     def _robust_micro_doppler_levels(feature):
@@ -323,65 +370,22 @@ class RadarStreamApplication:
             upper = lower + 1.0
         return (float(lower), float(upper))
 
-    def _handle_gesture(self, features, rti_feature):
-        feature_views = (
-            rti_feature,
-            features.dti,
-            features.rdi[:, :, :, 0],
-            features.rai,
-            features.rei,
-        )
-        if self.ui.pushButton_15.isChecked():
-            start_time = time.time()
-            result = self.judge_gesture(*feature_views)
-            if result is not None:
-                elapsed = time.time() - start_time
-                self.print_log(
-                    "识别时间:{:.4f}s, 识别结果:{}".format(elapsed, result),
-                    "blue",
-                )
-        elif self.ui.pushButton.isChecked() and self.dataset_scene_dir is not None:
-            self._save_feature_views(feature_views)
 
-    def load_model(self):
-        model_path = self.ui.comboBox_2.currentText()
-        if model_path in ("", "--select--"):
-            self.model = None
-            return
-        if self.model_factory is None:
-            self.print_log("尚未配置 model_factory，无法实例化模型", "red")
-            return
+    def _set_capture_enabled(self, enabled):
+        """Start or stop event-triggered feature capture."""
 
-        import torch
-
-        checkpoint = torch.load(model_path, map_location="cpu")
-        self.model = self.model_factory()
-        self.model.load_state_dict(checkpoint["state_dict"])
-        self.model.eval()
-        self.print_log("加载{}模型成功!".format(model_path), "blue")
-
-    def judge_gesture(self, rti, dti, rdi, rai, rei):
-        if self.model is None or self.gesture_predictor is None:
-            self.print_log("模型或 gesture_predictor 尚未配置", "red")
-            return None
-
-        gesture_id = int(
-            self.gesture_predictor(self.model, rai, dti, rei, rdi, rti)
-        )
-        gesture_name = GESTURE_NAMES.get(gesture_id, "unknown")
-        icon_path = str(self.config.paths.gesture_icon(gesture_id))
-        self.ui.graphicsView_5.setPixmap(QtGui.QPixmap(icon_path))
-        self.sub_window.img_update(icon_path)
-        QtCore.QTimer.singleShot(
-            self.config.gesture_interval_milliseconds, self.clear_gesture_icon
-        )
-        self.print_log("输出:{}".format(gesture_name), "blue")
-        return gesture_name
-
-    def clear_gesture_icon(self):
-        icon_path = str(self.config.paths.gesture_icon(7))
-        self.ui.graphicsView_5.setPixmap(QtGui.QPixmap(icon_path))
-        self.sub_window.img_update(icon_path)
+        if enabled:
+            self.select_dataset_scene()
+            if self.dataset_scene_dir is None:
+                self.ui.captureButton.setChecked(False)
+                self.print_log("采集失败：请填写数据集和场景", "red")
+                return
+            self.runtime_state.set_capture_enabled(True)
+            self.runtime_state.open_capture_interval()
+        else:
+            self.runtime_state.set_capture_enabled(False)
+        self.ui.captureButton.setText("停止采集" if enabled else "开始采集")
+        self.print_log("采集已启动" if enabled else "采集已停止", "green")
 
     def _save_feature_views(self, feature_views):
         self.capture_index += 1
@@ -391,14 +395,14 @@ class RadarStreamApplication:
             np.save(str(self.dataset_scene_dir / file_name), feature)
         self.print_log(
             "采集到特征:{}-{:05d}".format(
-                self.ui.comboBox_3.currentText(), self.capture_index
+                self.ui.captureSceneCombo.currentText(), self.capture_index
             ),
             "blue",
         )
 
     def select_dataset_scene(self):
-        subject = self.ui.lineEdit_6.text().strip()
-        scene = self.ui.comboBox_3.currentText().strip()
+        subject = self.ui.captureSubjectEdit.text().strip()
+        scene = self.ui.captureSceneCombo.currentText().strip()
         if not subject or not scene:
             self.dataset_scene_dir = None
             return
@@ -407,60 +411,70 @@ class RadarStreamApplication:
         self.dataset_scene_dir.mkdir(parents=True, exist_ok=True)
         self.capture_index = len(list(self.dataset_scene_dir.glob("DT_feature_*.npy")))
 
-    def show_radar_parameters(self):
-        config_path = self.ui.comboBox_7.currentText()
-        if self.ui.comboBox_7.currentIndex() < 0 or config_path == "--select--":
-            return
-        self.ui.comboBox_7.setToolTip(config_path)
-        parameters = Iwr6843TlvParser().parse_config(config_path)
-        self.ui.label_14.setText(
-            "{}m".format(parameters["rangeResolutionMeters"])
-        )
-        self.ui.label_35.setText(
-            "{}m/s".format(parameters["dopplerResolutionMps"])
-        )
-        self.ui.label_16.setText("{}m".format(parameters["maxRange"]))
-        self.ui.label_37.setText("{}m/s".format(parameters["maxVelocity"]))
+    def show_radar_parameters(self, config_path=""):
+        config_path = config_path or self.radar_config_panel.selected_config_path()
+        self.radar_config_panel.config_combo.setToolTip(config_path)
 
     def update_com_ports(self):
         ports = list(list_ports.comports())
         preferred = select_preferred_cli_port(ports)
         previous = self.cli_port_name
 
-        self.ui.comboBox_8.blockSignals(True)
-        try:
-            self.ui.comboBox_8.clear()
-            for port in ports:
-                self.ui.comboBox_8.addItem(port.device)
-                index = self.ui.comboBox_8.count() - 1
-                self.ui.comboBox_8.setItemData(
-                    index, port.description, QtCore.Qt.ToolTipRole
-                )
-
-            available_devices = [port.device for port in ports]
-            selected_device = previous
-            if selected_device not in available_devices:
-                selected_device = preferred.device if preferred is not None else ""
-            selected_index = self.ui.comboBox_8.findText(selected_device)
-            self.ui.comboBox_8.setCurrentIndex(selected_index)
-            self.cli_port_name = selected_device if selected_index >= 0 else ""
-        finally:
-            self.ui.comboBox_8.blockSignals(False)
+        available_devices = [port.device for port in ports]
+        selected_device = previous
+        if selected_device not in available_devices:
+            selected_device = preferred.device if preferred is not None else ""
+        self.radar_config_panel.set_cli_ports(ports, selected_device)
+        self.cli_port_name = self.radar_config_panel.selected_cli_port()
 
     def set_serial_port(self):
-        if self.ui.comboBox_8.currentIndex() >= 0:
-            self.cli_port_name = self.ui.comboBox_8.currentText()
+        self.cli_port_name = self.radar_config_panel.selected_cli_port()
 
     def send_radar_config(self):
-        config_path = self.ui.comboBox_7.currentText()
-        if not self.cli_port_name or config_path == "--select--":
-            self.print_log("发送失败", "red")
+        if not self.cli_port_name:
+            self.print_log("发送失败：请先选择 CLI 串口", "red")
             return
+        if self.radar_config_panel.uses_generated_config():
+            try:
+                config_text = self.radar_config_panel.generated_config_text()
+                micro_doppler_only = (
+                    self.radar_config_panel.generated_is_micro_doppler_only()
+                )
+            except Exception as error:
+                self.print_log("发送失败：{}".format(error), "red")
+                return
+            with tempfile.TemporaryDirectory(prefix="radarstream_cfg_") as temp_dir:
+                suffix = "_micro_doppler" if micro_doppler_only else ""
+                config_path = Path(temp_dir) / (
+                    "iwr6843_generated{}.cfg".format(suffix)
+                )
+                with config_path.open("w", encoding="utf-8", newline="\n") as stream:
+                    stream.write(config_text)
+                self._send_radar_config_file(
+                    str(config_path),
+                    micro_doppler_only=micro_doppler_only,
+                )
+            return
+
+        config_path = self.radar_config_panel.selected_config_path()
+        if not config_path:
+            self.print_log("发送失败：请先选择配置文件", "red")
+            return
+        self._send_radar_config_file(config_path)
+
+    def _send_radar_config_file(self, config_path, micro_doppler_only=None):
         try:
             profile_shape = parse_radar_profile_shape(config_path)
-            micro_doppler_only = (
-                "micro_doppler" in os.path.basename(config_path).lower()
-            )
+            if micro_doppler_only is None:
+                required_virtual_antennas = max(
+                    self.base_config.dsp.azimuth_channels
+                    + self.base_config.dsp.elevation_channels
+                ) + 1
+                micro_doppler_only = (
+                    "micro_doppler" in os.path.basename(config_path).lower()
+                    or profile_shape.tx_antennas * profile_shape.rx_antennas
+                    < required_virtual_antennas
+                )
             self._apply_radar_profile(
                 profile_shape,
                 micro_doppler_only=micro_doppler_only,
@@ -485,12 +499,8 @@ class RadarStreamApplication:
             micro_doppler_only=micro_doppler_only,
         )
         if runtime_config == self.config:
-            if (
-                micro_doppler_only
-                and self.ui is not None
-                and hasattr(self.ui, "tabWidget")
-            ):
-                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
+            if self.ui is not None and hasattr(self.ui, "fullFeatureAction"):
+                self._update_display_mode_availability()
             return
 
         feature_queue = Queue(maxsize=runtime_config.feature_queue_size)
@@ -508,10 +518,8 @@ class RadarStreamApplication:
         self.feature_queue = feature_queue
         self.signal_processor = signal_processor
         self.latest_features = None
-        if self.ui is not None and hasattr(self.ui, "tabWidget"):
-            if micro_doppler_only:
-                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
-            self._on_tab_changed(self.ui.tabWidget.currentIndex())
+        if self.ui is not None and hasattr(self.ui, "fullFeatureAction"):
+            self._update_display_mode_availability()
 
     def open_radar(self, config_path, com_port):
         self._ensure_capture_backend()
@@ -553,7 +561,7 @@ class RadarStreamApplication:
             self.processor.start()
 
     def set_color(self):
-        color_name = self.ui.comboBox.currentText()
+        color_name = self.ui.colorMapCombo.currentText()
         if color_name in ("", "--select--"):
             return
         if color_name == "customize":
@@ -564,14 +572,10 @@ class RadarStreamApplication:
         for image in self.images.values():
             image.setLookupTable(lookup_table)
 
-    def show_sub_window(self):
-        self.sub_window.show()
-        self.main_window.hide()
-
     def print_log(self, message, color="green"):
-        self.ui.textEdit.moveCursor(QtGui.QTextCursor.End)
+        self.ui.logTextEdit.moveCursor(QtGui.QTextCursor.End)
         timestamp = time.strftime("%H:%M:%S", time.localtime())
-        self.ui.textEdit.append(
+        self.ui.logTextEdit.append(
             '<font color="{}">{}-->{}</font>'.format(
                 html.escape(color), timestamp, html.escape(str(message))
             )

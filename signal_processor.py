@@ -61,7 +61,7 @@ class RadarSignalProcessor:
         )
 
         self._detected_frame_count = 0
-        self._gesture_delay_count = 0
+        self._capture_delay_count = 0
 
     def process_time_features(
         self,
@@ -101,7 +101,7 @@ class RadarSignalProcessor:
         rdi_frames = np.asarray(self.rdi_history)
 
         distance_matrix = radar_cube[:, 0, :]
-        self._update_gesture_trigger(distance_matrix)
+        self._update_capture_trigger(distance_matrix)
 
         self.rti_history.append(distance_matrix)
         rti_frames = np.asarray(self.rti_history)
@@ -132,7 +132,7 @@ class RadarSignalProcessor:
         """Build a long Doppler-time strip from one physical RX channel.
 
         This path deliberately avoids the range-Doppler and angle processing
-        used by the full feature tab.  The decoded virtual-channel layout puts
+        used by the full-feature display. The decoded virtual-channel layout puts
         the first transmitter's physical RX channels first, so selecting an RX
         index here uses exactly one antenna throughout the calculation.
         """
@@ -141,7 +141,7 @@ class RadarSignalProcessor:
         rx_channel = self.settings.micro_doppler_rx_channel
         # Range processing is independent for every chirp, so frames can be
         # concatenated afterwards without changing the result.  Unlike the
-        # gesture-model path, use all ADC samples from the dedicated profile.
+        # full-feature path, use all ADC samples from the dedicated profile.
         selected = adc_data[:, :, rx_channel]
         range_profiles = range_processing.range_processing(
             2 * selected,
@@ -182,17 +182,17 @@ class RadarSignalProcessor:
         return np.asarray(self.micro_doppler_history)
 
     def reset_micro_doppler_history(self):
-        """Start a fresh time strip when its tab is opened again."""
+        """Start a fresh time strip when its display mode is selected again."""
 
         self.micro_doppler_history.clear()
         self._micro_doppler_chirp_buffer = np.empty(
             (0, self.radar.adc_samples), dtype=np.complex128
         )
 
-    def _update_gesture_trigger(self, distance_matrix):
-        if not self.runtime_state.processing_enabled:
+    def _update_capture_trigger(self, distance_matrix):
+        if not self.runtime_state.capture_enabled:
             self._detected_frame_count = 0
-            self._gesture_delay_count = 0
+            self._capture_delay_count = 0
             return
 
         start = self.settings.detection_range_start
@@ -206,14 +206,14 @@ class RadarSignalProcessor:
         if self._detected_frame_count < self.settings.detection_required_frames:
             return
 
-        self._gesture_delay_count += 1
-        if self._gesture_delay_count < self.settings.gesture_delay_frames:
+        self._capture_delay_count += 1
+        if self._capture_delay_count < self.settings.capture_delay_frames:
             return
 
-        if self.runtime_state.claim_gesture_interval():
-            self.runtime_state.mark_gesture_ready()
+        if self.runtime_state.claim_capture_interval():
+            self.runtime_state.mark_capture_ready()
         self._detected_frame_count = 0
-        self._gesture_delay_count = 0
+        self._capture_delay_count = 0
 
     def process_angle_features(
         self,

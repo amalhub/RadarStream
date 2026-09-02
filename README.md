@@ -1,5 +1,7 @@
 # RadarStream
 
+**English** | [简体中文](README_zh-CN.md)
+
 RadarStream is a real-time RAWDATA acquisition, processing, and visualization system for TI MIMO mmWave radar series.
 
 
@@ -7,10 +9,6 @@ RadarStream is a real-time RAWDATA acquisition, processing, and visualization sy
 https://github.com/user-attachments/assets/7ce99b51-a1af-4025-8a84-ee580eb92d04
 
 Demo1: Real-time Motion Detection and Radar Feature Visualization
-<figure>
-  <img src="assets/media/realtime_visualization_demo.gif" alt="图片描述" width="100%">
-  <figcaption>Demo2: Real-time Gesture Recognition System</figcaption>
-</figure>
 
 ## Project Overview
 
@@ -33,6 +31,34 @@ If you encounter any issues while using this project, please feel free to submit
     *   Range-Azimuth Information (RAI) 
     *   Range-Elevation Information (REI) 
 *   **Interactive Visualization Interface**
+*   **Radar Configuration Hot Reload:**
+    *   Edit valid Profile/Frame parameters and click **Send Config** again;
+        RadarStream applies the new configuration without restarting the
+        application.
+    *   The native capture buffer and DSP processor are rebuilt automatically
+        for the new ADC/chirp/TX/RX dimensions, and the plots respond as soon
+        as the radar resumes streaming.
+
+## Interface Preview
+
+### Full Multi-dimensional Feature Mode
+
+The full-feature view displays RTI, DTI, RDI, RAI, and REI in a fixed 2 x 3
+grid while the dockable configuration and log panels remain independently
+movable.
+
+<p align="center">
+  <img src="assets/media/new_UI2.png" width="95%" alt="RadarStream full multi-dimensional feature interface" />
+</p>
+
+### Micro-Doppler Mode
+
+The Micro-Doppler view provides a larger single-feature workspace alongside
+the same real-time radar configuration controls.
+
+<p align="center">
+  <img src="assets/media/new_UI1.png" width="95%" alt="RadarStream Micro-Doppler interface" />
+</p>
 
 ## Requirements
 
@@ -40,13 +66,13 @@ If you encounter any issues while using this project, please feel free to submit
 - PyQt5
 - PyQtGraph
 - NumPy
-- PyTorch
 - Matplotlib
 - Serial
 
 ## Hardware Requirements
 
-- TI MIMO mmWave Radar Sensor (tested with IWR6843ISK and IWR6843ISK-OBS)
+- TI MIMO mmWave Radar Sensor (tested with IWR6843ISK, IWR6843ISK-OBS,
+  and IWR1843ISK)
 - DCA1000 EVM (essential for raw data capture)
 - PC with Windows OS 
 
@@ -54,12 +80,48 @@ If you encounter any issues while using this project, please feel free to submit
 The firmware must be selected from the `mmwave_industrial_toolbox_4_10_1\labs\Out_Of_Box_Demo\prebuilt_binaries/` directory inside any version of the mmwave_industrial_toolbox.  
 There is no strict requirement to use version 4.10.1.
 
+### High-frame-rate RAW ADC Capture Firmware
+
+The repository also provides the streamlined
+[`firmware/Studio_CLI_xWR68xx_obs.bin`](firmware/Studio_CLI_xWR68xx_obs.bin)
+firmware image. It removes all on-chip signal-processing stages, including
+range/Doppler detection, CFAR, angle estimation, and point-cloud generation.
+The radar is therefore dedicated to RF configuration, raw ADC acquisition,
+and LVDS streaming, reducing on-chip processing overhead and leaving more
+timing margin for higher capture frame rates and shorter frame periods. Radar
+features are processed by RadarStream on the host computer.
+
+A complete cfg format example for this firmware is:
+
+```text
+flushCfg
+dfeDataOutputMode 1
+channelCfg 15 7 0
+adcCfg 2 1
+adcbufCfg -1 0 1 1 1
+profileCfg 0 60 20 7 40 0 0 100 1 64 2000 0 0 30
+chirpCfg 0 0 0 0 0 0 0 1
+chirpCfg 1 1 0 0 0 0 0 2
+chirpCfg 2 2 0 0 0 0 0 4
+frameCfg 0 2 64 0 40 1 0
+lowPower 0 0
+lvdsStreamCfg -1 0 1 0
+testSrcCfg 0 0
+sensorStart
+```
+
+See
+[`firmware/README_Studio_CLI_xWR68xx_obs.md`](firmware/README_Studio_CLI_xWR68xx_obs.md)
+for its exact scope, usage notes, and companion configuration. Higher frame
+rates remain subject to chirp timing, LVDS bandwidth, DCA1000 Ethernet
+throughput, and host-processing limits.
+
 ## Setup and Installation
 
 1. Clone this repository
 2. Install the required dependencies:
    ```
-   pip install pyqt5 pyqtgraph numpy torch matplotlib pyserial
+   pip install pyqt5 pyqtgraph numpy matplotlib pyserial
    ```
 3. Connect the mmWave radar sensor and DCA1000 EVM to your computer (only need a 5V 3A DC power wire,  a Ethernet Cable, and a micro USB wire)
 4. Configure the network IPv4 settings (referencing the IPv4 configuration process from using mmWaveStudio for the DCA1000 EVM)
@@ -90,11 +152,26 @@ The repository includes STL files for a 3D printed structure designed to mount a
    python main.py
    ```
 2. Select the appropriate COM port for the radar CLI interface
-3. Choose a radar configuration file
-4. Click "Send Config" to initialize the radar
-5. Use the interface to:
+3. Choose either **Preset config file** or **Generated config** in the radar
+   configuration component
+4. For a preset file, select an existing `.cfg`; for generated mode, adjust
+   the IWR6843 Profile/Frame sliders and RX/TX channel checkboxes
+5. Click **Send Config** to initialize the radar, or **Save Config** to keep the
+   generated configuration
+6. Use the interface to:
    - Visualize radar data in real-time
    - Capture training data for machine learning models
+
+While the application is running, parameters can be edited and sent again
+without restarting RadarStream. After a successful send, the active capture
+and visualization pipeline immediately switches to the new radar profile.
+
+The interface is composed of four independent dock panels: radar data,
+radar configuration, capture, and log display. Each panel can be moved, floated,
+docked again, closed, or restored from the **Window** menu. **Real-time
+system** and **Micro-Doppler** are mutually exclusive choices in the
+**Display mode** menu; they are no longer separate tabs. Dragging a dock title
+shows four placement guides and a highlighted drop preview.
 
 The application UI can be opened without connecting the radar or DCA1000.
 Hardware and the native capture library are initialized only after clicking
@@ -121,6 +198,34 @@ a different physical antenna layout may still need a corresponding
 `DspConfig` azimuth/elevation channel mapping, because array geometry cannot be
 inferred safely from TI CLI commands alone.
 
+The dockable radar configuration component supports two workflows. Existing
+files under `radar_configs/` remain selectable and are sent without rewriting;
+their `channelCfg`, `profileCfg` and `frameCfg` values are parsed back into the
+controls and calculated performance indicators. Editing any control switches
+the component to generated mode. In generated mode, RadarStream validates the
+IWR6843 frequency range, ADC sampling window, channel masks and frame timing,
+then injects the edited values into
+`radar_configs/iwr6843_micro_doppler.cfg`. Sending uses an automatically cleaned
+temporary `.cfg`; **Save Config** writes the same generated text to a permanent
+file chosen by the user.
+
+### Configuration Hot Reload
+
+After editing valid parameters, click **Send Config** to hot-reload the radar
+configuration. RadarStream stops the current hardware pipeline, parses the new
+frame shape, rebuilds the native capture buffer and DSP processor, sends the
+cleaned CLI commands, and then resumes real-time visualization. Neither the
+application nor `app_config.py` needs to be restarted or edited.
+
+> [!CAUTION]
+> Host-side validation catches the known frequency, ADC-window, antenna-mask,
+> and frame-timing constraints, but the radar firmware is still the final
+> authority. An unsupported or invalid parameter combination may be rejected
+> after `sensorStop` and can occasionally leave the radar CLI unable to recover
+> through another send. In that case, press the evaluation board's physical
+> **RESET/NRST** button, wait for the `mmwDemo:/>` prompt, and resend a known-good
+> configuration.
+
 Mutable UI/DSP coordination is kept separately in `runtime_state.py`. The old
 string-keyed global state module has been removed from the application flow.
 
@@ -135,23 +240,22 @@ python -m unittest discover -s tests -v
 
 - `assets/`: static resources
   - `media/`: README images and demo media
-  - `gesture_icons/`: gesture visualization icons
   - `cad/`: 3D-printing STL and CAD source files
 - `radar_configs/`: TI radar CLI configuration files
 - `firmware/`: radar firmware binaries
 - `native/`: native UDP capture binaries for supported platforms
-- `model_checkpoints/`: local trained-model checkpoints (gitignored)
 - `radar_dsp/`: reusable low-level radar DSP algorithms
+- `radar_configurator/`: reusable IWR6843 cfg engine and compact PyQt5 component
 - `tests/`: hardware-independent regression tests
 - `main.py`: application entry point and composition root
 - `app_config.py`: centralized immutable application configuration
-- `runtime_state.py`: thread-safe UI/DSP runtime events
+- `runtime_state.py`: thread-safe display and capture runtime state
 - `data_pipeline.py`: native capture buffer and processing threads
 - `signal_processor.py`: stateful RTI/DTI/RDI/RAI/REI feature extraction
 - `hardware_interfaces.py`: radar EVM and DCA1000 communication adapters
 - `radar_profile.py`: TI CLI profile shape validation
 - `radar_tlv.py`: IWR6843 configuration and TLV parser
-- `generated_ui.py`: PyQt5 generated UI definitions
+- `main_window_ui.py`: dock-based PyQt5 main-window layout
 - `colormap_utils.py`: PyQtGraph colormap conversion helpers
 
 
@@ -200,7 +304,19 @@ This project references and builds upon:
 
 ## TODO
 
+Completed milestones:
+
+- [x] Validate compatibility with multiple RF evaluation boards (IWR6843ISK,
+  IWR6843ISK-OBS, and IWR1843ISK)
+- [x] Make the native capture API flexible enough to rebuild capture buffers
+  automatically from the selected radar profile
+
 Future improvements planned for this project:
-- [ ] Validate compatibility with more RF evaluation boards
-- [ ] Migrate from PyQt5 to PySide6
-- [ ] Make the native capture API more flexible
+
+- [ ] Add offline RAW ADC recording playback for repeatable DSP analysis
+- [ ] Add real-time capture health monitoring for packet loss, buffer backlog,
+  and processing latency
+- [ ] Persist and restore dock layouts, selected configurations, and display
+  preferences
+- [ ] Add automated hardware-in-the-loop regression tests for supported radar
+  boards and configuration profiles

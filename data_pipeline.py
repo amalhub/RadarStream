@@ -29,7 +29,7 @@ class FeatureFrame:
 
 @dataclass(frozen=True)
 class MicroDopplerFrame:
-    """Long single-RX Doppler-time history for the lightweight tab."""
+    """Long single-RX Doppler-time history for the micro-Doppler view."""
 
     sequence: int
     micro_doppler: np.ndarray
@@ -129,11 +129,9 @@ class DataProcessor(Thread):
                 self._publish_latest(feature_frame)
 
     def _process_frame(self, adc_frame, sequence):
-        """Run only the DSP path selected by the visible tab."""
+        """Run only the DSP path selected by the display-mode menu."""
 
         mode = self.signal_processor.runtime_state.feature_mode
-        if mode is FeatureMode.IDLE:
-            return None
         if mode is FeatureMode.MICRO_DOPPLER:
             micro_doppler = self.signal_processor.process_micro_doppler(
                 adc_frame, window_type_1d=Window.HANNING

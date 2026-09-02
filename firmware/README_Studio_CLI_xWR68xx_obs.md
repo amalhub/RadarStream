@@ -17,13 +17,13 @@
 - 起始频率：60 GHz
 - 有效扫频带宽：1 GHz
 - ADC 采样点：128 samples/chirp
-- 天线配置：3 Tx × 4 Rx TDM-MIMO
-- 每个 Tx 每帧 32 chirps，共 96 个物理 chirps
-- Chirp rate：约 3.344 kHz
+- 天线配置：1 Tx × 1 Rx
+- 每帧 128 chirps
+- Chirp rate：约 3.226 kHz（目标约 3.2 kHz）
 - 帧率：25 FPS
 - 帧周期：40 ms
 
-RadarStream 的微多普勒链路仅使用 `TX0-RX0` 虚拟通道，将不同帧的 chirps 连续拼接，并采用 128 chirps 窗口、16 chirps 步长进行滑窗多普勒处理。
+RadarStream 的微多普勒链路使用 `TX0-RX0` 通道，并采用 128 chirps 窗口、128 chirps 步长进行逐帧、不重叠的多普勒处理。
 
 ### 使用注意事项
 
@@ -52,13 +52,13 @@ The current profile uses:
 - Start frequency: 60 GHz
 - Effective sweep bandwidth: 1 GHz
 - ADC samples: 128 samples/chirp
-- Antenna configuration: 3 Tx × 4 Rx TDM-MIMO
-- 32 chirps per Tx per frame, or 96 physical chirps in total
-- Chirp rate: approximately 3.344 kHz
+- Antenna configuration: 1 Tx × 1 Rx
+- 128 chirps per frame
+- Chirp rate: approximately 3.226 kHz (targeting about 3.2 kHz)
 - Frame rate: 25 FPS
 - Frame period: 40 ms
 
-The RadarStream micro-Doppler path consumes only the `TX0-RX0` virtual channel. Chirps are concatenated continuously across frame boundaries and processed with a 128-chirp sliding window and a 16-chirp hop.
+The RadarStream micro-Doppler path uses the `TX0-RX0` channel and processes each frame with a 128-chirp window and a 128-chirp hop, producing non-overlapping windows without crossing frame boundaries.
 
 ### Usage notes
 
