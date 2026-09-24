@@ -248,7 +248,7 @@ class DockTitleBar(QtWidgets.QFrame):
         self.closeButton.setIcon(
             self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton)
         )
-        self.closeButton.setToolTip("关闭")
+        self.closeButton.setToolTip("Close")
         self.closeButton.clicked.connect(dock.close)
         layout.addWidget(self.closeButton)
         self.titleLayout = layout
@@ -339,7 +339,7 @@ class DockTitleBar(QtWidgets.QFrame):
             else QtWidgets.QStyle.SP_TitleBarMaxButton
         )
         self.floatButton.setIcon(self.style().standardIcon(icon_type))
-        self.floatButton.setToolTip("固定" if floating else "悬浮")
+        self.floatButton.setToolTip("Dock" if floating else "Float")
 
 
 class GuidedDockWidget(QtWidgets.QDockWidget):
@@ -405,7 +405,7 @@ class Ui_MainWindow:
         self.menuBar.setObjectName("menuBar")
         main_window.setMenuBar(self.menuBar)
 
-        self.displayMenu = self.menuBar.addMenu("显示模式")
+        self.displayMenu = self.menuBar.addMenu("Display Mode")
         self.displayMenu.setObjectName("displayMenu")
         self.displayModeGroup = QtWidgets.QActionGroup(main_window)
         self.displayModeGroup.setObjectName("displayModeGroup")
@@ -418,7 +418,7 @@ class Ui_MainWindow:
         self.fullFeatureAction.setData("full")
         self.fullFeatureAction.setChecked(True)
         self.microDopplerAction = QtWidgets.QAction(
-            "微多普勒", main_window, checkable=True
+            "Micro-Doppler", main_window, checkable=True
         )
         self.microDopplerAction.setObjectName("microDopplerAction")
         self.microDopplerAction.setData("micro_doppler")
@@ -426,7 +426,7 @@ class Ui_MainWindow:
         self.displayModeGroup.addAction(self.microDopplerAction)
         self.displayMenu.addActions(self.displayModeGroup.actions())
 
-        self.windowMenu = self.menuBar.addMenu("窗口")
+        self.windowMenu = self.menuBar.addMenu("Window")
         self.windowMenu.setObjectName("windowMenu")
 
     def _new_dock(self, main_window, title, object_name):
@@ -473,7 +473,7 @@ class Ui_MainWindow:
 
     def _build_data_dock(self, main_window):
         self.radarDataDock = self._new_dock(
-            main_window, "雷达数据实时显示", "radarDataDock"
+            main_window, "Real-time Radar Data", "radarDataDock"
         )
         self.dataDisplayStack = QtWidgets.QStackedWidget(self.radarDataDock)
         self.dataDisplayStack.setObjectName("dataDisplayStack")
@@ -486,19 +486,19 @@ class Ui_MainWindow:
         self.featureGrid.setVerticalSpacing(8)
 
         self.rangeTimeView = self._add_feature_cell(
-            "距离-时间图", "rangeTimeView", 0, 0, 1, 1
+            "Range-Time", "rangeTimeView", 0, 0, 1, 1
         )
         self.dopplerTimeView = self._add_feature_cell(
-            "多普勒-时间图", "dopplerTimeView", 0, 1, 1, 1
+            "Doppler-Time", "dopplerTimeView", 0, 1, 1, 1
         )
         self.rangeElevationView = self._add_feature_cell(
-            "距离-俯仰角度图", "rangeElevationView", 0, 2, 1, 1
+            "Range-Elevation", "rangeElevationView", 0, 2, 1, 1
         )
         self.rangeDopplerView = self._add_feature_cell(
-            "距离-多普勒图", "rangeDopplerView", 1, 0, 1, 1
+            "Range-Doppler", "rangeDopplerView", 1, 0, 1, 1
         )
         self.rangeAzimuthView = self._add_feature_cell(
-            "距离-方位角度图", "rangeAzimuthView", 1, 1, 1, 1
+            "Range-Azimuth", "rangeAzimuthView", 1, 1, 1, 1
         )
         for column in range(3):
             self.featureGrid.setColumnStretch(column, 1)
@@ -509,7 +509,7 @@ class Ui_MainWindow:
         self.microDopplerPage.setObjectName("microDopplerPage")
         micro_layout = QtWidgets.QVBoxLayout(self.microDopplerPage)
         micro_layout.setContentsMargins(12, 10, 12, 12)
-        micro_title = QtWidgets.QLabel("单接收天线微多普勒特征")
+        micro_title = QtWidgets.QLabel("Single-RX Micro-Doppler Feature")
         micro_title.setAlignment(QtCore.Qt.AlignCenter)
         micro_layout.addWidget(micro_title)
         self.microDopplerView = GraphicsLayoutWidget(self.microDopplerPage)
@@ -555,14 +555,14 @@ class Ui_MainWindow:
 
     def _build_config_dock(self, main_window):
         self.radarConfigDock = self._new_dock(
-            main_window, "雷达配置", "radarConfigDock"
+            main_window, "Radar Configuration", "radarConfigDock"
         )
         placeholder = QtWidgets.QWidget(self.radarConfigDock)
         placeholder.setObjectName("radarConfigPlaceholder")
         self.set_dock_content(self.radarConfigDock, placeholder)
 
     def _build_capture_dock(self, main_window):
-        self.captureDock = self._new_dock(main_window, "采集", "captureDock")
+        self.captureDock = self._new_dock(main_window, "Capture", "captureDock")
         body = QtWidgets.QWidget(self.captureDock)
         body.setObjectName("capturePanel")
         layout = QtWidgets.QFormLayout(body)
@@ -575,33 +575,33 @@ class Ui_MainWindow:
         self.colorMapCombo.addItem("--select--")
         self.colorMapCombo.addItem("customize")
         self.colorMapCombo.addItems(matplotlib_colormap_names())
-        layout.addRow("配色：", self.colorMapCombo)
+        layout.addRow("Colormap:", self.colorMapCombo)
 
         self.captureSubjectEdit = QtWidgets.QLineEdit("chaotic_dataset", body)
         self.captureSubjectEdit.setObjectName("captureSubjectEdit")
-        layout.addRow("数据集：", self.captureSubjectEdit)
+        layout.addRow("Dataset:", self.captureSubjectEdit)
 
         self.captureSceneCombo = QtWidgets.QComboBox(body)
         self.captureSceneCombo.setObjectName("captureSceneCombo")
         self.captureSceneCombo.addItems(
             ["Back", "Dblclick", "Down", "Front", "Left", "Right", "Up"]
         )
-        layout.addRow("场景：", self.captureSceneCombo)
+        layout.addRow("Scene:", self.captureSceneCombo)
 
-        self.captureButton = QtWidgets.QPushButton("开始采集", body)
+        self.captureButton = QtWidgets.QPushButton("Start Capture", body)
         self.captureButton.setObjectName("captureButton")
         self.captureButton.setCheckable(True)
         layout.addRow(self.captureButton)
         self.set_dock_content(self.captureDock, body)
 
     def _build_log_dock(self, main_window):
-        self.logDock = self._new_dock(main_window, "日志显示", "logDock")
+        self.logDock = self._new_dock(main_window, "Log", "logDock")
         self.logTextEdit = QtWidgets.QTextEdit(self.logDock)
         self.logTextEdit.setObjectName("logTextEdit")
         self.logTextEdit.setReadOnly(True)
         self.logTextEdit.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
         self.clearLogButton = self.logDock.customTitleBar.add_action_button(
-            "清空", self.logTextEdit.clear, "清空日志"
+            "Clear", self.logTextEdit.clear, "Clear log"
         )
         self.clearLogButton.setObjectName("clearLogButton")
         self.set_dock_content(self.logDock, self.logTextEdit)

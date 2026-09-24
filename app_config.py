@@ -175,9 +175,11 @@ class AppConfig:
             and max(channel_indices) >= self.radar.virtual_antennas
         ):
             raise ValueError(
-                "当前 DSP 天线映射至少需要 {} 路虚拟天线，但所选配置只有 {} 路；"
-                "不同雷达的方位角/俯仰角阵列布局无法仅从 cfg 自动推断，请配置对应的 "
-                "DspConfig 天线通道映射。".format(
+                "The current DSP antenna mapping requires at least {} virtual antennas, "
+                "but the selected configuration provides only {}; "
+                "azimuth/elevation array layouts differ across radar models and cannot be "
+                "safely inferred from cfg alone, so please configure the matching DspConfig "
+                "antenna channel mapping.".format(
                     max(channel_indices) + 1, self.radar.virtual_antennas
                 )
             )

@@ -1,6 +1,6 @@
 # RadarStream
 
-**English** | [简体中文](README_zh-CN.md)
+**English** | [English (alternate copy)](README_zh-CN.md)
 
 RadarStream is a real-time RAWDATA acquisition, processing, and visualization system for TI MIMO mmWave radar series.
 

@@ -1,81 +1,97 @@
 # RadarStream
 
-[English](README.md) | **简体中文**
+**English** | [English (alternate copy)](README_zh-CN.md)
 
-RadarStream 是一个面向 TI MIMO 毫米波雷达系列的实时原始数据采集、处理与可视化系统。
+RadarStream is a real-time RAWDATA acquisition, processing, and visualization system for TI MIMO mmWave radar series.
+
+
 
 https://github.com/user-attachments/assets/7ce99b51-a1af-4025-8a84-ee580eb92d04
 
-演示 1：实时运动检测与雷达特征可视化
+Demo1: Real-time Motion Detection and Radar Feature Visualization
 
-## 项目概述
+## Project Overview
 
-本系统支持德州仪器（TI）MIMO 毫米波雷达的实时原始数据采集、处理与可视化。除射频评估板外，原始数据采集还需要 DCA1000EVM。目前已完成以下评估板的测试：
-
+This system supports Texas Instruments' MIMO mmWave radar series for real-time raw data acquisition, processing, and visualization. In addition to the RF evaluation board, the DCA1000EVM is required for data capture. Currently, the system has been tested with:
 - IWR6843ISK
 - IWR6843ISK-OBS
 - IWR1843ISK
 
-如果在使用过程中遇到问题，欢迎提交 Issue 或 Pull Request。
+If you encounter any issues while using this project, please feel free to submit a pull request.
 
-## 功能特性
+## Features ✨
 
-- **TI MIMO 毫米波雷达实时多线程数据采集：**
-  - 使用多线程架构完成数据采集与处理。
-  - 为绕过 Python 全局解释器锁（GIL）并实现真正的多核处理，数据采集模块使用 C 语言封装，可实现接近实时、低丢帧的数据采集与处理。
-- **多维雷达特征提取：**
-  - 距离-时间信息（RTI）
-  - 多普勒-时间信息（DTI）
-  - 距离-多普勒信息（RDI）
-  - 距离-方位角信息（RAI）
-  - 距离-俯仰角信息（REI）
-- **交互式可视化界面**
-- **雷达配置热重载：**
-  - 修改合法的 Profile/Frame 参数后，再次点击“发送配置”即可应用新配置，无需重启 RadarStream。
-  - 系统会根据新的 ADC/chirp/TX/RX 维度自动重建原生采集缓冲区和 DSP 处理器；雷达恢复数据流后，图像立即按照新配置更新。
+*   **Real-time, Multi-threaded Radar Data Acquisition from TI MIMO mmWave Radar Sensors:**
+    *   Leveraging a **multi-threaded architecture 🧵** for data acquisition and processing.
+    *   To overcome Python's Global Interpreter Lock (GIL) and enable true multi-core processing, the data acquisition module is **wrapped in C 🚀**, ensuring near real-time, frame-loss-free data capture and handling.
+*   **Multi-dimensional Feature Extraction:**
+    *   Range-Time Information (RTI) 
+    *   Doppler-Time Information (DTI) 
+    *   Range-Doppler Information (RDI) 
+    *   Range-Azimuth Information (RAI) 
+    *   Range-Elevation Information (REI) 
+*   **Interactive Visualization Interface**
+*   **Radar Configuration Hot Reload:**
+    *   Edit valid Profile/Frame parameters and click **Send Config** again;
+        RadarStream applies the new configuration without restarting the
+        application.
+    *   The native capture buffer and DSP processor are rebuilt automatically
+        for the new ADC/chirp/TX/RX dimensions, and the plots respond as soon
+        as the radar resumes streaming.
 
-## 界面预览
+## Interface Preview
 
-### 完整多维特征模式
+### Full Multi-dimensional Feature Mode
 
-完整特征界面使用固定的 `2 × 3` 网格显示 RTI、DTI、RDI、RAI 和 REI；雷达配置、采集和日志等 Dock 面板均可独立拖动、悬浮或重新停靠。
-
-<p align="center">
-  <img src="assets/media/new_UI2.png" width="95%" alt="RadarStream 完整多维特征界面" />
-</p>
-
-### 微多普勒模式
-
-微多普勒模式提供更大的单特征显示区域，同时保留实时雷达配置控件。
+The full-feature view displays RTI, DTI, RDI, RAI, and REI in a fixed 2 x 3
+grid while the dockable configuration and log panels remain independently
+movable.
 
 <p align="center">
-  <img src="assets/media/new_UI1.png" width="95%" alt="RadarStream 微多普勒界面" />
+  <img src="assets/media/new_UI2.png" width="95%" alt="RadarStream full multi-dimensional feature interface" />
 </p>
 
-## 软件依赖
+### Micro-Doppler Mode
+
+The Micro-Doppler view provides a larger single-feature workspace alongside
+the same real-time radar configuration controls.
+
+<p align="center">
+  <img src="assets/media/new_UI1.png" width="95%" alt="RadarStream Micro-Doppler interface" />
+</p>
+
+## Requirements
 
 - Python 3.7+
 - PyQt5
 - PyQtGraph
 - NumPy
 - Matplotlib
-- PySerial
+- Serial
 
-## 硬件要求
+## Hardware Requirements
 
-- TI MIMO 毫米波雷达评估板（已测试 IWR6843ISK、IWR6843ISK-OBS 和 IWR1843ISK）
-- DCA1000EVM（原始数据采集必需）
-- Windows PC
+- TI MIMO mmWave Radar Sensor (tested with IWR6843ISK, IWR6843ISK-OBS,
+  and IWR1843ISK)
+- DCA1000 EVM (essential for raw data capture)
+- PC with Windows OS 
 
-## 固件要求
+## Firmware Requirements
+The firmware must be selected from the `mmwave_industrial_toolbox_4_10_1\labs\Out_Of_Box_Demo\prebuilt_binaries/` directory inside any version of the mmwave_industrial_toolbox.  
+There is no strict requirement to use version 4.10.1.
 
-固件应从任意版本 `mmwave_industrial_toolbox` 内的 `mmwave_industrial_toolbox_4_10_1\labs\Out_Of_Box_Demo\prebuilt_binaries/` 对应目录选择，不强制要求使用 4.10.1 版本。
+### High-frame-rate RAW ADC Capture Firmware
 
-### 高帧率 RAW ADC 采集固件
+The repository also provides the streamlined
+[`firmware/Studio_CLI_xWR68xx_obs.bin`](firmware/Studio_CLI_xWR68xx_obs.bin)
+firmware image. It removes all on-chip signal-processing stages, including
+range/Doppler detection, CFAR, angle estimation, and point-cloud generation.
+The radar is therefore dedicated to RF configuration, raw ADC acquisition,
+and LVDS streaming, reducing on-chip processing overhead and leaving more
+timing margin for higher capture frame rates and shorter frame periods. Radar
+features are processed by RadarStream on the host computer.
 
-仓库提供新的精简固件 [`firmware/Studio_CLI_xWR68xx_obs.bin`](firmware/Studio_CLI_xWR68xx_obs.bin)。该固件移除了片内距离/多普勒检测、CFAR、角度估计、点云等所有信号处理环节，使雷达端仅负责射频配置、原始 ADC 数据采集和 LVDS 数据传输，从而减少片内处理开销，为更高的采集帧率和更短的帧周期留出空间。雷达特征由 RadarStream 在上位机完成处理。
-
-该固件所用 cfg 的完整格式示例如下：
+A complete cfg format example for this firmware is:
 
 ```text
 flushCfg
@@ -94,122 +110,171 @@ testSrcCfg 0 0
 sensorStart
 ```
 
-更详细的功能范围、使用注意事项和配套配置说明请参阅 [`firmware/README_Studio_CLI_xWR68xx_obs.md`](firmware/README_Studio_CLI_xWR68xx_obs.md)。更高帧率仍会受到 chirp 时序、LVDS 带宽、DCA1000 以太网吞吐量和上位机处理能力的共同限制。
+See
+[`firmware/README_Studio_CLI_xWR68xx_obs.md`](firmware/README_Studio_CLI_xWR68xx_obs.md)
+for its exact scope, usage notes, and companion configuration. Higher frame
+rates remain subject to chirp timing, LVDS bandwidth, DCA1000 Ethernet
+throughput, and host-processing limits.
 
-## 安装与配置
+## Setup and Installation
 
-1. 克隆本仓库。
-2. 安装依赖：
-
-   ```powershell
+1. Clone this repository
+2. Install the required dependencies:
+   ```
    pip install pyqt5 pyqtgraph numpy matplotlib pyserial
    ```
+3. Connect the mmWave radar sensor and DCA1000 EVM to your computer (only need a 5V 3A DC power wire,  a Ethernet Cable, and a micro USB wire)
+4. Configure the network IPv4 settings (referencing the IPv4 configuration process from using mmWaveStudio for the DCA1000 EVM)
 
-3. 将毫米波雷达和 DCA1000EVM 连接至计算机。通常需要 5 V/3 A 直流电源线、网线和 Micro-USB 数据线。
-4. 配置采集网卡的 IPv4 地址，可参考 mmWave Studio 使用 DCA1000EVM 时的 IPv4 配置流程。
-
-下图展示了 Raspberry Pi 4B 和 Windows 两种采集方式。Raspberry Pi 在实时处理与显示时可处理的帧数较少，容易发生数据丢失，因此不推荐用于本项目的实时采集。
-
-<p align="center">
-  <img src="assets/media/raspberry_pi_setup.png" width="36%" alt="Raspberry Pi 采集方式" />
-  <img src="assets/media/windows_setup.png" width="45%" alt="Windows 采集方式" />
-  <img src="assets/media/radar_front_view.jpg" width="40.5%" alt="雷达正视图" />
-  <img src="assets/media/radar_side_view.jpg" width="40.5%" alt="雷达侧视图" />
-</p>
-
-## 3D 打印固定结构
-
-仓库提供用于安装和固定 DCA1000EVM 的 3D 打印结构 STL 文件。
-
-**注意：**组装时还需要若干 M3 尼龙隔离柱和螺钉。
+Two different acquisition methods are shown here: one figure displays Raspberry Pi 4B acquisition, while the other demonstrates Windows-based  acquisition. However, the Raspberry Pi acquisition has very few frames during real-time processing and display, making it prone to data loss. (not recommended to use Raspberry Pi for acquisition)
 
 <p align="center">
-  <img src="assets/media/enclosure_exploded_view.png" width="70%" alt="DCA1000EVM 固定结构爆炸图" />
+  <img src="assets/media/raspberry_pi_setup.png" width="36%" />
+  <img src="assets/media/windows_setup.png" width="45%" />
+  <img src="assets/media/radar_front_view.jpg" width="40.5%" />
+  <img src="assets/media/radar_side_view.jpg" width="40.5%" />
 </p>
 
-## 使用方法
+## 3D Printed Mount
 
-1. 启动主程序：
+The repository includes STL files for a 3D printed structure designed to mount and secure the DCA1000EVM board.
 
-   ```powershell
+**Note:** You will need some M3 size nylon standoffs and screws for assembly.
+
+<p align="center">
+  <img src="assets/media/enclosure_exploded_view.png" width="70%" />
+</p>
+
+## Usage
+
+1. Run the main application:
+   ```
    python main.py
    ```
+2. Select the appropriate COM port for the radar CLI interface
+3. Choose either **Preset config file** or **Generated config** in the radar
+   configuration component
+4. For a preset file, select an existing `.cfg`; for generated mode, adjust
+   the IWR6843 Profile/Frame sliders and RX/TX channel checkboxes
+5. Click **Send Config** to initialize the radar, or **Save Config** to keep the
+   generated configuration
+6. Use the interface to:
+   - Visualize radar data in real-time
+   - Capture training data for machine learning models
 
-2. 选择雷达 CLI 对应的串口。
-3. 在雷达配置组件中选择“预设配置文件”或“参数生成配置”。
-4. 使用预设配置时选择已有 `.cfg` 文件；使用生成模式时，通过滑动条、数字输入框以及 RX/TX 通道复选框修改 IWR6843 Profile/Frame 参数。
-5. 点击“发送配置”初始化雷达；如需保留生成的配置，点击“保存配置”。
-6. 使用界面实时查看雷达特征，或采集用于机器学习的数据。
+While the application is running, parameters can be edited and sent again
+without restarting RadarStream. After a successful send, the active capture
+and visualization pipeline immediately switches to the new radar profile.
 
-程序运行期间可以继续修改参数并再次发送，无需重启 RadarStream。配置发送成功后，当前采集与可视化流水线会立即切换到新的雷达 Profile。
+The interface is composed of four independent dock panels: radar data,
+radar configuration, capture, and log display. Each panel can be moved, floated,
+docked again, closed, or restored from the **Window** menu. **Real-time
+system** and **Micro-Doppler** are mutually exclusive choices in the
+**Display mode** menu; they are no longer separate tabs. Dragging a dock title
+shows four placement guides and a highlighted drop preview.
 
-主界面由四个独立 Dock 面板组成：雷达数据实时显示、雷达配置、采集和日志显示。每个面板均可拖动、悬浮、重新停靠或关闭，也可以从“窗口”菜单恢复。实时系统和微多普勒是“显示模式”菜单中的互斥选项，不再使用 Tab 切换。拖动 Dock 标题栏时，界面会显示四向停靠导航和目标区域预览。
+The application UI can be opened without connecting the radar or DCA1000.
+Hardware and the native capture library are initialized only after clicking
+"Send Config". If Windows reports error `10049`, configure the capture network
+adapter IPv4 address to match `NetworkConfig.host_address` in `app_config.py`.
 
-未连接雷达或 DCA1000 时也可以打开程序界面。只有点击“发送配置”后，系统才会初始化硬件和原生采集库。如果 Windows 报错 `10049`，请确认采集网卡的 IPv4 地址与 `app_config.py` 中的 `NetworkConfig.host_address` 匹配。
+On startup, RadarStream automatically selects the TI XDS110 Application/User
+UART or the Silicon Labs CP2105 Enhanced COM Port as the radar CLI port. The
+Standard/Data port is not used because raw samples arrive through DCA1000.
 
-程序启动后会优先选择 TI XDS110 Application/User UART 或 Silicon Labs CP2105 Enhanced COM Port 作为雷达 CLI 串口。Standard/Data 端口不用于原始数据采集，因为原始采样数据通过 DCA1000 传输。
+## Configuration
 
-## 配置说明
+Runtime and hardware policy is centralized in `app_config.py`. The selected TI
+CLI `.cfg` file is the source of truth for ADC samples, chirps per TX, TX count
+and RX count. Before each connection, RadarStream parses those values, rebuilds
+the native double-buffer to the exact frame length and recreates the DSP
+processor. Switching between compatible frame configurations no longer
+requires editing `app_config.py`.
 
-运行时和硬件策略集中定义在 `app_config.py`。当前选中的 TI CLI `.cfg` 文件是 ADC 采样点数、每个 TX 的 chirp 数、TX 数量和 RX 数量的唯一配置来源。每次建立连接前，RadarStream 都会解析这些参数，按照准确的帧长度重建原生双缓冲区并重新创建 DSP 处理器。因此，在兼容的帧配置之间切换时，不再需要手动修改 `app_config.py`。
+`DEFAULT_CONFIG.radar` is only the fallback before a file is selected. Network,
+DSP and path policies still come from `AppConfig`; derived values such as raw
+frame length and virtual antenna count are calculated automatically. A cfg for
+a different physical antenna layout may still need a corresponding
+`DspConfig` azimuth/elevation channel mapping, because array geometry cannot be
+inferred safely from TI CLI commands alone.
 
-`DEFAULT_CONFIG.radar` 仅作为选择配置文件前的回退值。网络、DSP 和路径策略仍由 `AppConfig` 提供；原始帧长度、虚拟天线数量等派生值会自动计算。由于 TI CLI 指令无法可靠推断物理阵列几何，使用不同物理天线布局的 cfg 时，仍可能需要同步调整 `DspConfig` 中的方位角/俯仰角通道映射。
+The dockable radar configuration component supports two workflows. Existing
+files under `radar_configs/` remain selectable and are sent without rewriting;
+their `channelCfg`, `profileCfg` and `frameCfg` values are parsed back into the
+controls and calculated performance indicators. Editing any control switches
+the component to generated mode. In generated mode, RadarStream validates the
+IWR6843 frequency range, ADC sampling window, channel masks and frame timing,
+then injects the edited values into
+`radar_configs/iwr6843_micro_doppler.cfg`. Sending uses an automatically cleaned
+temporary `.cfg`; **Save Config** writes the same generated text to a permanent
+file chosen by the user.
 
-可停靠的雷达配置组件支持两种工作方式。`radar_configs/` 下的现有文件可以直接选择和发送，不会被重写；文件中的 `channelCfg`、`profileCfg` 和 `frameCfg` 会解析并回显到控件和性能指标中。修改任意控件后，组件会自动切换到参数生成模式。在生成模式下，RadarStream 会校验 IWR6843 频率范围、ADC 采样窗口、通道 mask 和帧时序，并将修改后的参数应用到 `radar_configs/iwr6843_micro_doppler.cfg` 模板。发送时使用自动清理的临时 `.cfg`；“保存配置”会把相同内容写入用户指定的永久文件。
+### Configuration Hot Reload
 
-### 配置热重载
-
-修改合法参数后，点击“发送配置”即可热重载雷达配置。RadarStream 会停止当前硬件流水线、解析新的帧尺寸、重建原生采集缓冲区和 DSP 处理器、发送清理后的 CLI 指令，然后恢复实时可视化。整个过程不需要重启程序，也不需要修改 `app_config.py`。
+After editing valid parameters, click **Send Config** to hot-reload the radar
+configuration. RadarStream stops the current hardware pipeline, parses the new
+frame shape, rebuilds the native capture buffer and DSP processor, sends the
+cleaned CLI commands, and then resumes real-time visualization. Neither the
+application nor `app_config.py` needs to be restarted or edited.
 
 > [!CAUTION]
-> 主机端校验能够检查目前已知的频率、ADC 窗口、天线 mask 和帧时序约束，但雷达固件仍拥有最终决定权。不受支持或非法的参数组合可能在 `sensorStop` 后被固件拒绝，并且偶尔会让雷达 CLI 无法通过再次发送配置自行恢复。遇到这种情况时，请按下评估板上的物理 **RESET/NRST** 按钮，等待重新出现 `mmwDemo:/>` 提示符，然后发送一份已知可用的配置。
+> Host-side validation catches the known frequency, ADC-window, antenna-mask,
+> and frame-timing constraints, but the radar firmware is still the final
+> authority. An unsupported or invalid parameter combination may be rejected
+> after `sensorStop` and can occasionally leave the radar CLI unable to recover
+> through another send. In that case, press the evaluation board's physical
+> **RESET/NRST** button, wait for the `mmwDemo:/>` prompt, and resend a known-good
+> configuration.
 
-可变的 UI/DSP 协调状态单独保存在 `runtime_state.py` 中，旧的字符串键全局状态模块已经从应用流程中移除。
+Mutable UI/DSP coordination is kept separately in `runtime_state.py`. The old
+string-keyed global state module has been removed from the application flow.
 
-核心回归测试不依赖雷达硬件：
+Core regression tests do not require radar hardware:
 
-```powershell
+```
 python -m unittest discover -s tests -v
 ```
 
-## 项目结构
 
-- `assets/`：静态资源
-  - `media/`：README 图片和演示媒体
-  - `cad/`：3D 打印 STL 与 CAD 源文件
-- `radar_configs/`：TI 雷达 CLI 配置文件
-- `firmware/`：雷达固件二进制文件
-- `native/`：受支持平台的原生 UDP 采集二进制文件
-- `radar_dsp/`：可复用的底层雷达 DSP 算法
-- `radar_configurator/`：可复用的 IWR6843 cfg 引擎与紧凑型 PyQt5 组件
-- `tests/`：不依赖硬件的回归测试
-- `main.py`：应用入口和组件装配入口
-- `app_config.py`：集中式不可变应用配置
-- `runtime_state.py`：线程安全的显示与采集运行状态
-- `data_pipeline.py`：原生采集缓冲区和处理线程
-- `signal_processor.py`：有状态的 RTI/DTI/RDI/RAI/REI 特征提取
-- `hardware_interfaces.py`：雷达 EVM 和 DCA1000 通信适配器
-- `radar_profile.py`：TI CLI Profile 形状校验
-- `radar_tlv.py`：IWR6843 配置与 TLV 解析器
-- `main_window_ui.py`：基于 Dock 的 PyQt5 主窗口布局
-- `colormap_utils.py`：PyQtGraph 颜色映射转换工具
+## Project Structure
 
-## 论文引用
+- `assets/`: static resources
+  - `media/`: README images and demo media
+  - `cad/`: 3D-printing STL and CAD source files
+- `radar_configs/`: TI radar CLI configuration files
+- `firmware/`: radar firmware binaries
+- `native/`: native UDP capture binaries for supported platforms
+- `radar_dsp/`: reusable low-level radar DSP algorithms
+- `radar_configurator/`: reusable IWR6843 cfg engine and compact PyQt5 component
+- `tests/`: hardware-independent regression tests
+- `main.py`: application entry point and composition root
+- `app_config.py`: centralized immutable application configuration
+- `runtime_state.py`: thread-safe display and capture runtime state
+- `data_pipeline.py`: native capture buffer and processing threads
+- `signal_processor.py`: stateful RTI/DTI/RDI/RAI/REI feature extraction
+- `hardware_interfaces.py`: radar EVM and DCA1000 communication adapters
+- `radar_profile.py`: TI CLI profile shape validation
+- `radar_tlv.py`: IWR6843 configuration and TLV parser
+- `main_window_ui.py`: dock-based PyQt5 main-window layout
+- `colormap_utils.py`: PyQtGraph colormap conversion helpers
 
-如果本项目对您的研究有所帮助，请考虑引用以下与本工具密切相关的论文：
 
-```bibtex
+## Citation
+
+If this project helps your research, please consider citing our papers that are closely related to this tool:
+
+```
 @ARTICLE{11270504,
   author={Chen, Qin and Lu, Qunfeng and Chen, Yaoxi and Tian, Yu and Cui, Zongyong and Cao, Zongjie},
-  journal={IEEE Transactions on Instrumentation and Measurement},
-  title={Domain-Generalized Gesture Recognition via mmWave Radar Signal Multi-View Learning},
+  journal={IEEE Transactions on Instrumentation and Measurement}, 
+  title={Domain-Generalized Gesture Recognition via mmWave Radar Signal Multi-View Learning}, 
   year={2025},
   doi={10.1109/TIM.2025.3637962}}
 
 @ARTICLE{10714388,
   author={Chen, Qin and Cui, Zongyong and Tian, Yu and Chen, Yaoxi and Cao, Zongjie},
-  journal={IEEE Internet of Things Journal},
-  title={Joint Position Estimation for Hand Motion Using MIMO FMCW mmWave Radar},
+  journal={IEEE Internet of Things Journal}, 
+  title={Joint Position Estimation for Hand Motion Using MIMO FMCW mmWave Radar}, 
   year={2025},
   volume={12},
   number={3},
@@ -218,34 +283,40 @@ python -m unittest discover -s tests -v
 
 @ARTICLE{10288185,
   author={Chen, Qin and Cui, Zongyong and Zhou, Zheng and Tian, Yu and Cao, Zongjie},
-  journal={IEEE Internet of Things Journal},
-  title={MMHTSR: In-Air Handwriting Trajectory Sensing and Reconstruction Based on mmWave Radar},
+  journal={IEEE Internet of Things Journal}, 
+  title={MMHTSR: In-Air Handwriting Trajectory Sensing and Reconstruction Based on mmWave Radar}, 
   year={2024},
   volume={11},
   number={6},
   pages={10069-10083},
   doi={10.1109/JIOT.2023.3325258}}
+
 ```
 
-## 致谢
 
-特别感谢 OpenAI Codex；如果没有它的协助，本项目的大规模重构将很难顺利完成。
+## Acknowledgements
 
-本项目参考并使用了以下项目：
+We gratefully acknowledge OpenAI Codex, without whose assistance this project's extensive refactoring would have been difficult to complete.
 
-- [real-time-radar](https://github.com/AndyYu0010/real-time-radar)，作者 AndyYu0010
-- [OpenRadar](https://github.com/PreSenseRadar/OpenRadar)，主要参考其 DSP 模块
+This project references and builds upon:
+- [real-time-radar](https://github.com/AndyYu0010/real-time-radar) by AndyYu0010
+- [OpenRadar](https://github.com/PreSenseRadar/OpenRadar) - specifically the DSP module
 
 ## TODO
 
-已完成：
+Completed milestones:
 
-- [x] 验证多个射频评估板的兼容性（IWR6843ISK、IWR6843ISK-OBS 和 IWR1843ISK）
-- [x] 改造原生采集 API，使其能够根据选中的雷达 Profile 自动重建采集缓冲区
+- [x] Validate compatibility with multiple RF evaluation boards (IWR6843ISK,
+  IWR6843ISK-OBS, and IWR1843ISK)
+- [x] Make the native capture API flexible enough to rebuild capture buffers
+  automatically from the selected radar profile
 
-后续计划：
+Future improvements planned for this project:
 
-- [ ] 增加离线 RAW ADC 记录回放，以支持可重复的 DSP 分析
-- [ ] 增加实时采集健康监控，包括丢包、缓冲区积压和处理延迟
-- [ ] 持久化并恢复 Dock 布局、所选配置和显示偏好
-- [ ] 为已支持的雷达评估板和配置 Profile 增加硬件在环自动回归测试
+- [ ] Add offline RAW ADC recording playback for repeatable DSP analysis
+- [ ] Add real-time capture health monitoring for packet loss, buffer backlog,
+  and processing latency
+- [ ] Persist and restore dock layouts, selected configurations, and display
+  preferences
+- [ ] Add automated hardware-in-the-loop regression tests for supported radar
+  boards and configuration profiles

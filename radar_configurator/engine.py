@@ -117,14 +117,14 @@ class Iwr6843ConfigEngine:
         ]
         if missing:
             raise ValueError(
-                "配置缺少必要命令：{}".format(", ".join(missing))
+                "Configuration is missing required commands: {}".format(", ".join(missing))
             )
 
         channel = _command_tokens(lines, "channelCfg")[0]
         profile = _command_tokens(lines, "profileCfg")[0]
         frame = _command_tokens(lines, "frameCfg")[0]
         if len(channel) < 4 or len(profile) < 15 or len(frame) < 8:
-            raise ValueError("channelCfg、profileCfg 或 frameCfg 参数数量不完整")
+            raise ValueError("channelCfg, profileCfg, or frameCfg has incomplete arguments")
 
         return Iwr6843ConfigValues(
             start_frequency_ghz=float(profile[2]),
@@ -339,31 +339,31 @@ class Iwr6843ConfigEngine:
         issues = []
         numeric_values = tuple(values.__dict__.values())
         if not all(math.isfinite(float(value)) for value in numeric_values):
-            return ("参数中存在非有限数值",)
+            return ("Non-finite numeric values are present in parameters",)
         if not 1 <= values.rx_channel_mask <= 15:
-            issues.append("RX Channel Mask 必须在 1–15 之间")
+            issues.append("RX channel mask must be between 1 and 15")
         if not 1 <= values.tx_channel_mask <= 7:
-            issues.append("TX Channel Mask 必须在 1–7 之间")
+            issues.append("TX channel mask must be between 1 and 7")
         if not 60 <= values.start_frequency_ghz <= 64:
-            issues.append("IWR6843 起始频率必须在 60–64 GHz 之间")
+            issues.append("IWR6843 start frequency must be between 60 and 64 GHz")
         end_frequency = (
             values.start_frequency_ghz
             + values.frequency_slope_mhz_us * values.ramp_end_time_us / 1000.0
         )
         if end_frequency > 64:
             issues.append(
-                "Chirp 结束频率 {:.3f} GHz 超过 64 GHz".format(end_frequency)
+                "Chirp end frequency {:.3f} GHz exceeds 64 GHz".format(end_frequency)
             )
         if not 0 < values.frequency_slope_mhz_us <= 266:
-            issues.append("频率斜率必须在 0–266 MHz/us 之间")
+            issues.append("Frequency slope must be between 0 and 266 MHz/us")
         if not 2 <= values.adc_samples <= 2048:
-            issues.append("ADC 采样点数必须在 2–2048 之间")
+            issues.append("ADC sample count must be between 2 and 2048")
         if not 100 <= values.sample_rate_ksps <= 12500:
-            issues.append("复数 ADC 采样率必须在 0.1–12.5 Msps 之间")
+            issues.append("Complex ADC sample rate must be between 0.1 and 12.5 Msps")
         if values.chirp_loops <= 0:
-            issues.append("Chirp Loops 必须大于 0")
+            issues.append("Chirp loops must be greater than 0")
         if values.frame_period_ms <= 0:
-            issues.append("Frame Period 必须大于 0")
+            issues.append("Frame period must be greater than 0")
         sample_rate_msps = values.sample_rate_ksps / 1000.0
         if sample_rate_msps > 0:
             required_ramp = values.adc_start_time_us + (
@@ -371,18 +371,18 @@ class Iwr6843ConfigEngine:
             )
             if values.ramp_end_time_us < required_ramp:
                 issues.append(
-                    "Ramp End Time 至少需要 {:.2f} us 才能覆盖 ADC 窗口".format(
+                    "Ramp end time must be at least {:.2f} us to cover the ADC window".format(
                         required_ramp
                     )
                 )
         if metrics.active_frame_time_ms > values.frame_period_ms:
             issues.append(
-                "Frame Period 至少需要 {:.3f} ms 才能容纳全部 Chirp".format(
+                "Frame period must be at least {:.3f} ms to hold all chirps".format(
                     metrics.active_frame_time_ms
                 )
             )
         if metrics.bandwidth_mhz <= 0 or metrics.bandwidth_mhz >= 4000:
-            issues.append("有效扫频带宽必须在 0–4000 MHz 之间")
+            issues.append("Effective sweep bandwidth must be between 0 and 4000 MHz")
         return tuple(issues)
 
     def render(self, values):

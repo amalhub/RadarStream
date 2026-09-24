@@ -62,7 +62,7 @@ def add_doppler_compensation(input_data,
             that means we only compensate on selected doppler bins.
     
     Return:
-        input_data (ndarray): Original input data with the columns related to virtual receivers got compensated.原始数据
+        input_data (ndarray): Original input data with compensation applied to the virtual-receiver-related columns.
         
     Example:
         >>> # If the compensation is done right before naive azimuth FFT and objects is detected already. you need to 
@@ -225,7 +225,7 @@ def near_field_correction(idx,
 
     return
 
-# 清除positive_bin_idx：negative_bin_idx之间的静态目标
+# Remove static targets between positive_bin_idx and negative_bin_idx
 def dc_range_signature_removal(fft_out1_d,
                                positive_bin_idx,
                                negative_bin_idx,

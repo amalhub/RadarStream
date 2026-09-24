@@ -57,8 +57,8 @@ def windowing(input, window_type, axis=0):
 
     """
 
-    # 输入为(num_chirps_per_frame, num_adc_samples, num_rx_antennas)
-    # 要转(num_chirps_per_frame, num_rx_antennas, num_adc_samples)
+    # Input shape is (num_chirps_per_frame, num_adc_samples, num_rx_antennas)
+    # It may need to be rearranged to (num_chirps_per_frame, num_rx_antennas, num_adc_samples)
 
     axis = np.core.numeric.normalize_axis_index(axis, input.ndim)
     window_length = input.shape[axis]

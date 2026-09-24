@@ -70,7 +70,7 @@ def select_preferred_cli_port(ports):
         value = 0
         if "application/user" in text or "application uart" in text:
             value += 120
-        if "enhanced" in text or "增强" in text:
+        if "enhanced" in text:
             value += 110
         if "xds110" in text:
             value += 40
@@ -78,7 +78,7 @@ def select_preferred_cli_port(ports):
             value += 30
         if "standard" in text or "data port" in text or "auxiliary" in text:
             value -= 100
-        if "bluetooth" in text or "bthenum" in text or "蓝牙" in text:
+        if "bluetooth" in text or "bthenum" in text:
             value -= 200
         return value
 
@@ -127,7 +127,7 @@ class RadarCliClient:
                 if not stripped:
                     continue
                 if is_radar_config_comment(stripped):
-                    self._log("注释: {}".format(stripped), "gray")
+                    self._log("Comment: {}".format(stripped), "gray")
                     continue
                 self._send_line(stripped)
 
@@ -137,7 +137,7 @@ class RadarCliClient:
         if reset_input is not None:
             reset_input()
         self.cli_port.write((command + "\n").encode())
-        self._log("发送: {}".format(command), "blue")
+        self._log("Send: {}".format(command), "blue")
 
         start_time = time.time()
         response = b""
@@ -150,9 +150,9 @@ class RadarCliClient:
 
         response_text = response.decode(errors="ignore").strip()
         if not response_text:
-            self._log("接收: 未收到雷达响应", "red")
+            self._log("Recv: No radar response", "red")
             raise RadarCliCommandError(
-                "命令 {!r} 未收到雷达响应".format(command)
+                "Command {!r} received no radar response".format(command)
             )
 
         has_command_error = False
@@ -161,7 +161,7 @@ class RadarCliClient:
             if not response_line:
                 continue
             color = classify_cli_response(response_line)
-            self._log("接收: {}".format(response_line), color)
+            self._log("Recv: {}".format(response_line), color)
             normalized = response_line.lower()
             if any(marker in normalized for marker in CLI_ERROR_MARKERS):
                 has_command_error = True
@@ -169,7 +169,7 @@ class RadarCliClient:
         time.sleep(self.settings.line_delay_seconds)
         if has_command_error:
             raise RadarCliCommandError(
-                "雷达拒绝命令 {!r}: {}".format(command, response_text)
+                "Radar rejected command {!r}: {}".format(command, response_text)
             )
         return response_text
 
@@ -233,13 +233,14 @@ class Dca1000Controller:
             self.socket.close()
             if getattr(error, "winerror", None) == 10049:
                 raise HardwareConnectionError(
-                    "无法绑定DCA1000本机地址 {}:{}；请先将采集网卡IPv4配置为该地址，"
-                    "或修改 app_config.py 中的 NetworkConfig.host_address。".format(
+                    "Cannot bind DCA1000 local address {}:{}; set the capture NIC IPv4 "
+                    "address to this value first, or update NetworkConfig.host_address "
+                    "in app_config.py.".format(
                         *self.config_address
                     )
                 ) from error
             raise HardwareConnectionError(
-                "连接DCA1000失败（本机 {}:{}，设备 {}:{}）：{}".format(
+                "Failed to connect to DCA1000 (local {}:{}, device {}:{}): {}".format(
                     *self.config_address, *self.fpga_address, error
                 )
             ) from error

@@ -205,7 +205,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_profile_with_insufficient_virtual_antennas_is_rejected(self):
         shape = parse_radar_profile_shape("radar_configs/iwr1843.cfg")
 
-        with self.assertRaisesRegex(ValueError, "天线映射"):
+        with self.assertRaisesRegex(ValueError, "antenna mapping"):
             AppConfig().with_radar_shape(*shape.as_tuple())
 
     def test_enhanced_cp2105_port_is_selected_for_radar_cli(self):
@@ -380,10 +380,10 @@ class RadarCliClientTests(unittest.TestCase):
             client.send_config(config_path)
 
         self.assertEqual([b"sensorStart\n"], serial_port.writes)
-        self.assertIn(("注释: % Created for SDK ver:03.04", "gray"), log_entries)
-        self.assertIn(("注释: ***************", "gray"), log_entries)
-        self.assertIn(("发送: sensorStart", "blue"), log_entries)
-        self.assertIn(("接收: Done", "green"), log_entries)
+        self.assertIn(("Comment: % Created for SDK ver:03.04", "gray"), log_entries)
+        self.assertIn(("Comment: ***************", "gray"), log_entries)
+        self.assertIn(("Send: sensorStart", "blue"), log_entries)
+        self.assertIn(("Recv: Done", "green"), log_entries)
 
     def test_rejected_command_is_red_and_raises(self):
         serial_port = FakeSerialPort(
@@ -975,7 +975,7 @@ class ApplicationLifecycleTests(unittest.TestCase):
             self.assertTrue(application.ui.displayModeGroup.isExclusive())
             self.assertEqual(2, len(application.ui.displayModeGroup.actions()))
             self.assertFalse(hasattr(application.ui, "tabWidget"))
-            self.assertEqual("日志显示", application.ui.logDock.windowTitle())
+            self.assertEqual("Log", application.ui.logDock.windowTitle())
             application.ui.logTextEdit.setPlainText("temporary log")
             application.ui.clearLogButton.click()
             self.assertEqual("", application.ui.logTextEdit.toPlainText())

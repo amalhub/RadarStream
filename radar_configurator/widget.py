@@ -9,14 +9,14 @@ from .engine import ConfigValidationError, Iwr6843ConfigEngine
 
 
 PARAMETER_SPECS = (
-    ("start_frequency_ghz", "起始频率", 55.0, 82.0, 0.01, "GHz"),
+    ("start_frequency_ghz", "Start Frequency", 55.0, 82.0, 0.01, "GHz"),
     ("idle_time_us", "Idle Time", 0.1, 1000.0, 0.1, "us"),
     ("adc_start_time_us", "ADC Start", 0.0, 200.0, 0.1, "us"),
     ("ramp_end_time_us", "Ramp End", 0.1, 1000.0, 0.1, "us"),
-    ("frequency_slope_mhz_us", "频率斜率", 0.1, 399.0, 0.1, "MHz/us"),
-    ("adc_samples", "ADC 采样点", 2.0, 2048.0, 1.0, "点"),
-    ("sample_rate_ksps", "采样率", 100.0, 25000.0, 1.0, "ksps"),
-    ("chirp_loops", "Chirp Loops", 1.0, 4096.0, 1.0, "次"),
+    ("frequency_slope_mhz_us", "Frequency Slope", 0.1, 399.0, 0.1, "MHz/us"),
+    ("adc_samples", "ADC Samples", 2.0, 2048.0, 1.0, "samples"),
+    ("sample_rate_ksps", "Sample Rate", 100.0, 25000.0, 1.0, "ksps"),
+    ("chirp_loops", "Chirp Loops", 1.0, 4096.0, 1.0, "loops"),
     ("frame_period_ms", "Frame Period", 0.1, 10000.0, 0.1, "ms"),
 )
 
@@ -68,13 +68,13 @@ class ConstraintSlider(QtWidgets.QSlider):
         self.valid_maximum = float(maximum)
         if self.valid_minimum <= self.valid_maximum:
             self.setToolTip(
-                "当前有效范围：{} ～ {}".format(
+                "Current valid range: {} to {}".format(
                     self._format_value(self.valid_minimum),
                     self._format_value(self.valid_maximum),
                 )
             )
         else:
-            self.setToolTip("当前参数组合不存在可行区间")
+            self.setToolTip("No feasible interval exists for the current parameter combination")
         self.update()
 
     def is_value_valid(self, value=None):
@@ -414,12 +414,12 @@ class RadarConfigPanel(QtWidgets.QWidget):
 
         source_row = QtWidgets.QGridLayout()
         source_row.setHorizontalSpacing(5)
-        source_row.addWidget(QtWidgets.QLabel("来源："), 0, 0)
+        source_row.addWidget(QtWidgets.QLabel("Source:"), 0, 0)
         self.source_combo = QtWidgets.QComboBox()
-        self.source_combo.addItem("预设配置文件", self.EXISTING_SOURCE)
-        self.source_combo.addItem("参数生成配置", self.GENERATED_SOURCE)
+        self.source_combo.addItem("Preset config file", self.EXISTING_SOURCE)
+        self.source_combo.addItem("Generated config", self.GENERATED_SOURCE)
         source_row.addWidget(self.source_combo, 0, 1)
-        source_row.addWidget(QtWidgets.QLabel("配置："), 1, 0)
+        source_row.addWidget(QtWidgets.QLabel("Config:"), 1, 0)
         self.config_combo = RefreshComboBox()
         self.config_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLength)
         self.config_combo.setMinimumContentsLength(14)
@@ -458,10 +458,10 @@ class RadarConfigPanel(QtWidgets.QWidget):
         metrics = QtWidgets.QGridLayout()
         metrics.setHorizontalSpacing(5)
         metric_specs = (
-            ("range_resolution", "距离分辨率"),
-            ("max_range", "最大距离"),
-            ("velocity_resolution", "速度分辨率"),
-            ("max_velocity", "最大速度"),
+            ("range_resolution", "Range Resolution"),
+            ("max_range", "Maximum Range"),
+            ("velocity_resolution", "Velocity Resolution"),
+            ("max_velocity", "Maximum Velocity"),
         )
         for index, (name, title) in enumerate(metric_specs):
             row = index // 2
@@ -487,10 +487,10 @@ class RadarConfigPanel(QtWidgets.QWidget):
 
         action_grid = QtWidgets.QGridLayout()
         action_grid.setSpacing(4)
-        self.preview_button = QtWidgets.QPushButton("预览")
-        self.save_button = QtWidgets.QPushButton("保存配置")
-        self.send_button = QtWidgets.QPushButton("发送配置")
-        self.exit_button = QtWidgets.QPushButton("退出")
+        self.preview_button = QtWidgets.QPushButton("Preview")
+        self.save_button = QtWidgets.QPushButton("Save Config")
+        self.send_button = QtWidgets.QPushButton("Send Config")
+        self.exit_button = QtWidgets.QPushButton("Exit")
         action_grid.addWidget(self.preview_button, 0, 0)
         action_grid.addWidget(self.save_button, 0, 1)
         action_grid.addWidget(self.exit_button, 0, 2)
@@ -525,7 +525,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
             return self.engine.render(self.values)
         path = self.selected_config_path()
         if not path:
-            raise ValueError("请先选择配置文件")
+            raise ValueError("Please select a configuration file first")
         return Path(path).read_text(encoding="utf-8")
 
     def generated_config_text(self):
@@ -579,7 +579,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
         try:
             text = self.generated_config_text()
         except ConfigValidationError as error:
-            QtWidgets.QMessageBox.warning(self, "配置无效", str(error))
+            QtWidgets.QMessageBox.warning(self, "Invalid Configuration", str(error))
             return ""
         if not target_path:
             suffix = (
@@ -592,7 +592,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
             )
             target_path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
-                "保存雷达配置",
+                "Save Radar Configuration",
                 suggested,
                 "Radar config (*.cfg);;All files (*)",
             )
@@ -605,7 +605,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
             with target.open("w", encoding="utf-8", newline="\n") as stream:
                 stream.write(text)
         except OSError as error:
-            QtWidgets.QMessageBox.critical(self, "保存失败", str(error))
+            QtWidgets.QMessageBox.critical(self, "Save Failed", str(error))
             return ""
         self.refresh_config_files()
         self.select_config_path(target)
@@ -616,10 +616,10 @@ class RadarConfigPanel(QtWidgets.QWidget):
         try:
             text = self.current_config_text()
         except (OSError, ValueError) as error:
-            QtWidgets.QMessageBox.warning(self, "无法预览", str(error))
+            QtWidgets.QMessageBox.warning(self, "Preview Unavailable", str(error))
             return
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("雷达配置预览")
+        dialog.setWindowTitle("Radar Configuration Preview")
         dialog.resize(720, 560)
         layout = QtWidgets.QVBoxLayout(dialog)
         editor = QtWidgets.QPlainTextEdit()
@@ -628,7 +628,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
         editor.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
         editor.setPlainText(text)
         layout.addWidget(editor)
-        close_button = QtWidgets.QPushButton("关闭")
+        close_button = QtWidgets.QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
         dialog.exec_()
@@ -651,7 +651,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
         except (OSError, ValueError) as error:
             self._config_load_error = str(error)
             self.status_label.setStyleSheet("color: #b42318;")
-            self.status_label.setText("配置解析失败：{}".format(error))
+            self.status_label.setText("Configuration parse failed: {}".format(error))
             self.send_button.setEnabled(False)
             self.save_button.setEnabled(False)
         self.configSelectionChanged.emit(path)
@@ -672,7 +672,7 @@ class RadarConfigPanel(QtWidgets.QWidget):
         for index in range(count):
             checkbox = QtWidgets.QCheckBox("{}{}".format(prefix, index + 1))
             checkbox.setToolTip(
-                "{} 通道，mask 位 {}".format(prefix, index)
+                "{} channel, mask bit {}".format(prefix, index)
             )
             layout.addWidget(checkbox)
             checkboxes.append(checkbox)
@@ -753,17 +753,17 @@ class RadarConfigPanel(QtWidgets.QWidget):
         if self._config_load_error and not self.uses_generated_config():
             self.status_label.setStyleSheet("color: #b42318;")
             self.status_label.setText(
-                "配置解析失败：{}".format(self._config_load_error)
+                "Configuration parse failed: {}".format(self._config_load_error)
             )
         elif issues:
             self.status_label.setStyleSheet("color: #b42318;")
-            self.status_label.setText("参数校验：" + "；".join(issues))
+            self.status_label.setText("Validation: " + "; ".join(issues))
         elif self.uses_generated_config():
             self.status_label.setStyleSheet("color: #067647;")
-            self.status_label.setText("参数有效，将生成临时配置后发送")
+            self.status_label.setText("Parameters are valid; a temporary generated config will be sent")
         else:
             self.status_label.setStyleSheet("color: #475467;")
-            self.status_label.setText("发送所选文件；修改参数后自动切换为生成模式")
+            self.status_label.setText("Send the selected file; editing parameters switches to generated mode")
         if self.uses_generated_config():
             self.send_button.setEnabled(not issues)
         else:

@@ -138,7 +138,7 @@ class Iwr6843TlvParser:
    
     def _process_azimut_heat_map(self, byte_buffer):
             """
-            热图
+            Heat map
             """
             idx = byte_buffer.index(MAGIC_WORD)
             header_data, idx = self._parse_header_data(byte_buffer, idx)    
@@ -155,7 +155,7 @@ class Iwr6843TlvParser:
 
     def _process_detected_points(self, byte_buffer):
             """
-            点云
+            Point cloud
             """
             idx = byte_buffer.index(MAGIC_WORD)
             header_data, idx = self._parse_header_data(byte_buffer, idx)    

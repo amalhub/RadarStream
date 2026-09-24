@@ -224,7 +224,7 @@ class RadarStreamApplication:
             self.show_radar_parameters
         )
         self.radar_config_panel.configSaved.connect(
-            lambda path: self.print_log("配置已保存：{}".format(path), "green")
+            lambda path: self.print_log("Configuration saved: {}".format(path), "green")
         )
         self.ui.captureSceneCombo.currentIndexChanged.connect(
             self.select_dataset_scene
@@ -282,7 +282,7 @@ class RadarStreamApplication:
             self.ui.captureButton.setChecked(False)
         self.ui.captureButton.setEnabled(capture_available)
         self.ui.captureButton.setToolTip(
-            "" if capture_available else "采集仅适用于多维特征显示模式"
+            "" if capture_available else "Capture is available only in full-feature display mode"
         )
 
     def _update_display_mode_availability(self):
@@ -378,14 +378,14 @@ class RadarStreamApplication:
             self.select_dataset_scene()
             if self.dataset_scene_dir is None:
                 self.ui.captureButton.setChecked(False)
-                self.print_log("采集失败：请填写数据集和场景", "red")
+                self.print_log("Capture failed: please provide both dataset and scene", "red")
                 return
             self.runtime_state.set_capture_enabled(True)
             self.runtime_state.open_capture_interval()
         else:
             self.runtime_state.set_capture_enabled(False)
-        self.ui.captureButton.setText("停止采集" if enabled else "开始采集")
-        self.print_log("采集已启动" if enabled else "采集已停止", "green")
+        self.ui.captureButton.setText("Stop Capture" if enabled else "Start Capture")
+        self.print_log("Capture started" if enabled else "Capture stopped", "green")
 
     def _save_feature_views(self, feature_views):
         self.capture_index += 1
@@ -394,7 +394,7 @@ class RadarStreamApplication:
             file_name = "{}_feature_{:05d}.npy".format(name, self.capture_index)
             np.save(str(self.dataset_scene_dir / file_name), feature)
         self.print_log(
-            "采集到特征:{}-{:05d}".format(
+            "Captured feature: {}-{:05d}".format(
                 self.ui.captureSceneCombo.currentText(), self.capture_index
             ),
             "blue",
@@ -432,7 +432,7 @@ class RadarStreamApplication:
 
     def send_radar_config(self):
         if not self.cli_port_name:
-            self.print_log("发送失败：请先选择 CLI 串口", "red")
+            self.print_log("Send failed: please select a CLI serial port first", "red")
             return
         if self.radar_config_panel.uses_generated_config():
             try:
@@ -441,7 +441,7 @@ class RadarStreamApplication:
                     self.radar_config_panel.generated_is_micro_doppler_only()
                 )
             except Exception as error:
-                self.print_log("发送失败：{}".format(error), "red")
+                self.print_log("Send failed: {}".format(error), "red")
                 return
             with tempfile.TemporaryDirectory(prefix="radarstream_cfg_") as temp_dir:
                 suffix = "_micro_doppler" if micro_doppler_only else ""
@@ -458,7 +458,7 @@ class RadarStreamApplication:
 
         config_path = self.radar_config_panel.selected_config_path()
         if not config_path:
-            self.print_log("发送失败：请先选择配置文件", "red")
+            self.print_log("Send failed: please select a configuration file first", "red")
             return
         self._send_radar_config_file(config_path)
 
@@ -481,10 +481,10 @@ class RadarStreamApplication:
             )
             self.open_radar(config_path, self.cli_port_name)
         except Exception as error:
-            self.print_log("发送失败: {}".format(error), "red")
+            self.print_log("Send failed: {}".format(error), "red")
             return
         self.print_log(
-            "发送成功；已按配置使用 ADC/chirp/TX/RX={}，帧长度={} int16".format(
+            "Send succeeded; applied ADC/chirp/TX/RX={} with frame length={} int16".format(
                 profile_shape.as_tuple(), self.config.radar.raw_values_per_frame
             ),
             "green",

@@ -260,12 +260,12 @@ def aoa_capon(x, steering_vector, magnitude=False):
 
     Rxx = cov_matrix(x)
     Rxx = forward_backward_avg(Rxx)
-    # 矩阵求逆
+    # Matrix inversion
     Rxx_inv = np.linalg.pinv(Rxx)
     # Calculate Covariance Matrix Rxx
-    # *是点乘 @是矩阵乘方法
+    # * is element-wise multiply; @ is matrix multiplication
     first = Rxx_inv @ steering_vector.T
-    # reciprocal返回1/X
+    # reciprocal returns 1/X
     denominator = np.einsum('ij,ij->i', steering_vector.conj(), first.T)
     den = np.zeros_like(denominator)
     np.divide(1, denominator, out=den, where=np.abs(denominator) > np.finfo(float).eps)
@@ -281,13 +281,13 @@ def aoa_capon_2D(x, steering_vector,ang_est_range, ang_est_resolution, magnitude
     num_vec = int(round(num_vec))
     Rxx = cov_matrix(x)
     Rxx = forward_backward_avg(Rxx)
-    # 矩阵求逆
+    # Matrix inversion
     Rxx_inv = np.linalg.inv(Rxx)
     # Calculate Covariance Matrix Rxx
-    # *是点乘 @是矩阵乘方法
+    # * is element-wise multiply; @ is matrix multiplication
     first = Rxx_inv @ steering_vector.T
-    # reciprocal返回1/X,
-    # 'ij,ij->i'表示只做对角线元素相乘
+    # reciprocal returns 1/X,
+    # 'ij,ij->i' multiplies only aligned elements and sums per row
     den = np.reciprocal(np.einsum('ij,ij->i', steering_vector.conj(), first.T))
     den = np.reshape(den,(num_vec,num_vec),order='F')
     return np.abs(den)
@@ -335,11 +335,11 @@ def aoa_capon_new(x,x1, steering_vector, magnitude=False):
 
     Rxx = cov_matrix_x1_x2(x,x1)
     Rxx = forward_backward_avg(Rxx)
-    # 矩阵求逆
+    # Matrix inversion
     Rxx_inv = np.linalg.inv(Rxx)
     # Calculate Covariance Matrix Rxx
     first = Rxx_inv @ steering_vector.T
-    # reciprocal返回1/X
+    # reciprocal returns 1/X
     den = np.reciprocal(np.einsum('ij,ij->i', steering_vector.conj(), first.T))
     weights = np.matmul(first, den)
 
